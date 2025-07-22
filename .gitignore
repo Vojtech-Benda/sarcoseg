@@ -1,3 +1,8 @@
 # input/output directories
-in/
-out/
+inputs/
+outputs/
+
+# environment items
+.venv/
+
+models/
