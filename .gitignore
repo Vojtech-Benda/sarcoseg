@@ -6,3 +6,9 @@ outputs/
 .venv/
 
 models/
+
+# ide paths
+.vscode/*
+
+# pycache
+__pycache__
