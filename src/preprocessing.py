@@ -55,12 +55,12 @@ class SeriesMetadata:
 def sort_files_by_series_uid(root_dir: Path, filepaths: list[str]) -> dict[str, list[str]]:
     files_by_uid: dict[str, list[str]] = {}
     
-    first_file = pydicom.dcmread(Path(root_dir, filepaths[0]))
+    first_file = pydicom.dcmread(Path(root_dir, filepaths[0]), stop_before_pixels=True)
     patient_id = first_file.PatientID
     
     for path in filepaths:
         dicom_path = Path(root_dir, path)
-        dataset = pydicom.dcmread(dicom_path)
+        dataset = pydicom.dcmread(dicom_path, stop_before_pixels=True)
         series_uid = dataset.SeriesInstanceUID
         
         if series_uid in files_by_uid:
@@ -99,7 +99,7 @@ def filter_series_to_segment(all_series: dict,
         first_filepath = filepaths[0]
         if not first_filepath.exists():
             raise FileNotFoundError(2, "file not found", first_filepath)
-        dataset = pydicom.dcmread(first_filepath)
+        dataset = pydicom.dcmread(first_filepath, stop_before_pixels=True)
         
         # filter by words in SeriesDescription
         series_desc: str = dataset.SeriesDescription
@@ -181,7 +181,7 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
         "kilo_voltage_peak"
         ] + additional_dicom_tags
     """
-    df_dicom_tags.loc[last_row_index] = [
+    row_data = [
         data.patient_id,
         pseudoname,
         data.study_instance_uid,
@@ -191,10 +191,14 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
         data.has_contrast,
         data.contrast_phase,
         data.kilo_voltage_peak
-    ] + [data.additional_tags[tag] for tag in dicom_tags]
+    ]
     
+    if dicom_tags:
+        row_data + [data.additional_tags[tag] for tag in dicom_tags]
+    
+    df_dicom_tags.loc[last_row_index] = row_data
     df_dicom_tags.to_csv(path_df_dicom_tags, columns=df_dicom_tags.columns, header=True, index=True, index_label="index")
-    print(f"id: '{data.patient_id}' '(pseudoname: {pseudoname})' contrast_phase: '{data.contrast_phase}' written to csv")
+    print(f"id: '{data.patient_id}' (pseudoname: '{pseudoname}') contrast_phase: '{data.contrast_phase}' written to csv")
     return pseudoname
 
 
@@ -224,10 +228,15 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         "has_contrast",
         "contrast_phase",
         "kilo_voltage_peak"
-        ] + additional_dicom_tags
-    patient_tags_df = pd.DataFrame([], columns=df_cols)
-    patient_tags_df_path = Path(output_dir, "patient_dcm_tags.csv")
-    patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
+        ]
+    
+    if additional_dicom_tags:
+        df_cols.extend(additional_dicom_tags)
+    
+    patient_tags_df_path = Path(output_dir, "sarco_patient_dicom_tags.csv")
+    if not patient_tags_df_path.exists():
+        patient_tags_df = pd.DataFrame([], columns=df_cols)
+        patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
 
     # SimpleITK reader to write series as NifTi format
     sitk_reader = sitk.ImageSeriesReader()
