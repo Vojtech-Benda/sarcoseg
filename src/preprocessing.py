@@ -8,8 +8,9 @@ from dataclasses import dataclass
 # image processing packages
 import pydicom
 from pydicom import datadict
-import SimpleITK as sitk
 import pandas as pd
+from dicom2nifti.common import sort_dicoms, validate_orientation, validate_slicecount
+from dicom2nifti.convert_dicom import dicom_array_to_nifti
 
 
 SERIES_DESC_PATTERN = re.compile(r'|'.join(
@@ -68,7 +69,7 @@ def sort_files_by_series_uid(root_dir: Path, filepaths: list[str]) -> dict[str, 
         else:
             files_by_uid[series_uid] = [dicom_path]
     
-    print(f"\nid: '{patient_id}' has {len(filepaths)} files across {len(files_by_uid.keys())} series")
+    print(f"\nid '{patient_id}' has {len(filepaths)} files across {len(files_by_uid.keys())} series")
     return files_by_uid
 
 
@@ -194,11 +195,11 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
     ]
     
     if dicom_tags:
-        row_data + [data.additional_tags[tag] for tag in dicom_tags]
+        row_data.extend([data.additional_tags[tag] for tag in dicom_tags])
     
     df_dicom_tags.loc[last_row_index] = row_data
     df_dicom_tags.to_csv(path_df_dicom_tags, columns=df_dicom_tags.columns, header=True, index=True, index_label="index")
-    print(f"id: '{data.patient_id}' (pseudoname: '{pseudoname}') contrast_phase: '{data.contrast_phase}' written to csv")
+    print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') contrast_phase '{data.contrast_phase}' written to csv")
     return pseudoname
 
 
@@ -233,15 +234,10 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
     if additional_dicom_tags:
         df_cols.extend(additional_dicom_tags)
     
-    patient_tags_df_path = Path(output_dir, "sarco_patient_dicom_tags.csv")
+    patient_tags_df_path = Path(output_dir, "sarco_patients_dicom_tags.csv")
     if not patient_tags_df_path.exists():
         patient_tags_df = pd.DataFrame([], columns=df_cols)
         patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
-
-    # SimpleITK reader to write series as NifTi format
-    sitk_reader = sitk.ImageSeriesReader()
-    sitk_reader.MetaDataDictionaryArrayUpdateOn()
-    sitk_reader.LoadPrivateTagsOn()
 
     for root, _, files in input_dir.walk():
         if not files or "DICOMDIR" in files:
@@ -249,30 +245,30 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         
         files_by_series_uid = sort_files_by_series_uid(root, files)
         
-        series_to_segment = filter_series_to_segment(files_by_series_uid, 
-                                                     root_dir=root, 
+        series_to_segment = filter_series_to_segment(files_by_series_uid,  
                                                      additional_dicom_tags=additional_dicom_tags)
         print(f"found {len(series_to_segment)} valid series for segmentation")
         
         for data in series_to_segment:
-            dataset = pydicom.dcmread(data.filepaths[0])
-            image_orientation_patient = dataset.ImageOrientationPatient
+            dicom_datasets = [pydicom.dcmread(file) for file in data.filepaths]
+            dicom_datasets = sort_dicoms(dicom_datasets)
             
-            sitk_reader.SetFileNames(data.filepaths)
-            sitk_image = sitk_reader.Execute()
+            validate_orientation(dicom_datasets)
+            validate_slicecount(dicom_datasets)
             
-            if image_orientation_patient != [1, 0, 0, 0, 1, 0]:
-                sitk_image: sitk.Image = sitk.DICOMOrient(sitk_image, "LPS")
+            pseudoname = write_dicom_tags(patient_tags_df_path, 
+                                          data, 
+                                          additional_dicom_tags)
             
-            pseudoname = write_dicom_tags(patient_tags_df_path, data, additional_dicom_tags)
-            
-            if anonymize:
-                sitk_image.SetMetaData("0010|0010", pseudoname)
+            # if anonymize:
+            #     sitk_image.SetMetaData("0010|0010", pseudoname)
             
             nifti_filename = f"{pseudoname}_{data.contrast_phase}" if data.has_contrast else pseudoname
             output_path = Path(output_dir, f"{nifti_filename}.nii.gz")
-            sitk.WriteImage(sitk_image, output_path)
-            print(f"id: '{data.patient_id}' (pseudoname: '{pseudoname}') with contrast phase '{data.contrast_phase}' as '{output_path.name}' written to nifti")
+            dicom_array_to_nifti(dicom_list=dicom_datasets,
+                                 output_file=output_path,
+                                 reorient_nifti=True)
+            print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_path.name}'")
             
             
 if __name__ == "__main__":
