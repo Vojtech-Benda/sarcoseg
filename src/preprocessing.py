@@ -9,8 +9,9 @@ from dataclasses import dataclass
 import pydicom
 from pydicom import datadict
 import pandas as pd
-from dicom2nifti.common import sort_dicoms, validate_orientation, validate_slicecount
+from dicom2nifti.common import sort_dicoms, validate_orientation
 from dicom2nifti.convert_dicom import dicom_array_to_nifti
+import time
 
 
 SERIES_DESC_PATTERN = re.compile(r'|'.join(
@@ -238,7 +239,7 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
     if not patient_tags_df_path.exists():
         patient_tags_df = pd.DataFrame([], columns=df_cols)
         patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
-
+    
     for root, _, files in input_dir.walk():
         if not files or "DICOMDIR" in files:
             continue
@@ -254,22 +255,21 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
             dicom_datasets = sort_dicoms(dicom_datasets)
             
             validate_orientation(dicom_datasets)
-            validate_slicecount(dicom_datasets)
             
             pseudoname = write_dicom_tags(patient_tags_df_path, 
                                           data, 
                                           additional_dicom_tags)
             
-            # if anonymize:
-            #     sitk_image.SetMetaData("0010|0010", pseudoname)
-            
             nifti_filename = f"{pseudoname}_{data.contrast_phase}" if data.has_contrast else pseudoname
             output_path = Path(output_dir, f"{nifti_filename}.nii.gz")
-            dicom_array_to_nifti(dicom_list=dicom_datasets,
-                                 output_file=output_path,
-                                 reorient_nifti=True)
-            print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_path.name}'")
             
+            try:
+                dicom_array_to_nifti(dicom_list=dicom_datasets,
+                                    output_file=output_path,
+                                    reorient_nifti=True)
+                print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_path.name}'")
+            except RuntimeError as err:
+                print(err)
             
 if __name__ == "__main__":
     if len(sys.argv) < 1:
