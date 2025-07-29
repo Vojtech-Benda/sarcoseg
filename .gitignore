@@ -7,8 +7,9 @@ outputs/
 
 models/
 
-# ide paths
+# ide dirs
 .vscode/*
+.idea/*
 
 # pycache
 __pycache__
