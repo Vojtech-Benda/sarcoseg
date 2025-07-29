@@ -162,7 +162,7 @@ def filter_series_to_segment(all_series: dict,
     return [selected_native_series] + list(selected_contrast_series_by_phase.values())
     
 
-def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata, dicom_tags: list) -> int:
+def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata, add_dicom_tags: list) -> int:
     df_dicom_tags = pd.read_csv(path_df_dicom_tags, header=0, index_col=0)
 
     last_row_index = len(df_dicom_tags)
@@ -172,20 +172,22 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
     
     """
     cols: [
-        "patient_id",
-        "pseudoname",
-        "study_instance_uid",
-        "study_date",
-        "series_description",
-        "slice_thickness",
-        "has_contrast",
-        "contrast_phase",
-        "kilo_voltage_peak"
+        "PatientID",
+        "Pseudoname",
+        "Filename",
+        "StudyInstanceUID",
+        "StudyDate",
+        "SeriesDescription",
+        "SliceThickness",
+        "HasContrast",
+        "ContrastPhase",
+        "KiloVoltagePeak"
         ] + additional_dicom_tags
     """
     row_data = [
         data.patient_id,
         pseudoname,
+        f"{pseudoname}.nii.gz",
         data.study_instance_uid,
         data.study_date,
         data.series_description,
@@ -195,8 +197,8 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
         data.kilo_voltage_peak
     ]
     
-    if dicom_tags:
-        row_data.extend([data.additional_tags[tag] for tag in dicom_tags])
+    if add_dicom_tags:
+        row_data.extend([data.additional_tags[tag] for tag in add_dicom_tags])
     
     df_dicom_tags.loc[last_row_index] = row_data
     df_dicom_tags.to_csv(path_df_dicom_tags, columns=df_dicom_tags.columns, header=True, index=True, index_label="index")
@@ -221,15 +223,16 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
 
     # prepare table to output dicom tags
     df_cols = [
-        "patient_id",
-        "pseudoname",
-        "study_instance_uid",
-        "study_date",
-        "series_description",
-        "slice_thickness",
-        "has_contrast",
-        "contrast_phase",
-        "kilo_voltage_peak"
+        "PatientID",
+        "Pseudoname",
+        "Filename",
+        "StudyInstanceUID",
+        "StudyDate",
+        "SeriesDescription",
+        "SliceThickness",
+        "HasContrast",
+        "ContrastPhase",
+        "KiloVoltagePeak"
         ]
     
     if additional_dicom_tags:
