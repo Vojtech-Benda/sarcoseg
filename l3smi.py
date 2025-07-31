@@ -2,7 +2,7 @@ import sys
 import argparse
 
 from src.preprocessing import preprocess_dicom
-from src.segmentation import segment_data
+from src.segmentation import segment_spine
 from src.segmentation import segment_tissues
 
 def get_args():
@@ -156,23 +156,27 @@ if __name__ == "__main__":
     args = get_args()
     
     if args.command == "preprocess":
-        preprocess_dicom(args.input_dir, 
-                         args.output_dir, 
-                         anonymize=args.anonymize, 
-                         dicom_tags=args.dicom_tags)
+        preprocess_dicom(
+            args.input_dir, 
+            args.output_dir, 
+            anonymize=args.anonymize, 
+            dicom_tags=args.dicom_tags
+            )
     elif args.command == "segment":
-        segment_data(args.input_dir,
-                     args.output_dir,
-                     slices_num=args.slices_num,
-                     save_segmentations=args.save_segmentations
-                     )
-        # segment_tissues(args.input_dir,
-        #                 args.output_dir,
-        #                 vert_center_axial_slices,
-        #                 metrics=args.add_metrics,
-        #                 slices_range = args.volume_slices,
-        #                 save_segmentations=args.save_segmentations,
-        #                 )
+        # spine_results = segment_spine(
+        #     args.input_dir,
+        #     args.output_dir,
+        #     slices_num=args.slices_num,
+        #     save_segmentations=args.save_segmentations
+        #     )
+        
+        for direc in ("outputs/sarco_1", "outputs/sarco_2_arterial", "outputs/sarco_3_venous", "outputs/sarco_4"):
+            tissue_results = segment_tissues(
+                direc,
+                direc,
+                metrics=args.add_metrics,
+                save_segmentations=args.save_segmentations
+                )
     else:
         print(f"unknown command '{args.command}'")
         sys.exit(-1)    
