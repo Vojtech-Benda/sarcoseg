@@ -22,17 +22,17 @@ TARGET_VERTEBRAE_MAP = {
 
 
 TARGET_TISSUES_MAP = {
-    "muscle": 1, 
-    "sat": 2, 
-    "vat": 3, 
-    "imat": 4
+    "sat": 1, 
+    "vat": 2, 
+    "imat": 3,
+    "muscle": 4 
 }
 
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
-def segment_data(input_dir: Union[str, Path], 
+def segment_spine(input_dir: Union[str, Path], 
                  output_dir: Union[str, Path] = None, 
                  **kwargs):
     
@@ -44,7 +44,7 @@ def segment_data(input_dir: Union[str, Path],
     runtime_duration = {}
     for data_file in tqdm(data_file_list):
         data_file = Path(data_file)
-        print(f"\nsegmenting vertebrae for {data_file.name}")
+        tqdm.write(f"\nsegmenting vertebrae for {data_file.name}")
         
         start = perf_counter()
         pred_mask: nib.nifti1.Nifti1Image = totalsegmentator(data_file, 
@@ -55,7 +55,7 @@ def segment_data(input_dir: Union[str, Path],
                                     roi_subset=list(TARGET_VERTEBRAE_MAP.keys()),
                                     device="gpu")
         runtime_duration['spine_seg'] = perf_counter() - start
-        print(f"vertebrae segmentation finised in {runtime_duration['spine_seg']:.2f}s")
+        tqdm.write(f"vertebrae segmentation finised in {runtime_duration['spine_seg']:.2f}s")
         
         pred_mask = nib.funcs.as_closest_canonical(pred_mask)
 
@@ -65,15 +65,19 @@ def segment_data(input_dir: Union[str, Path],
         spine_pred_filepath = data_outdir.joinpath("spine_pred_mask.nii.gz")
         try:
             nib.save(pred_mask, spine_pred_filepath)
-            print(f"saved spine segmentation mask to '{spine_pred_filepath}'")
+            tqdm.write(f"saved spine segmentation mask to '{spine_pred_filepath}'")
         except RuntimeError as err:
             print(err)
         # arr = nibabel_mask.get_fdata().astype(np.uint8)
         
         pred_volume = sitk.ReadImage(spine_pred_filepath)
         pred_volume = sitk.DICOMOrient(pred_volume, "RAS")
+        input_volume = sitk.ReadImage(data_file)
+        input_volume = sitk.DICOMOrient(input_volume, "RAS")
+        
         l3_volume = pred_volume == TARGET_VERTEBRAE_MAP['vertebrae_L3']
 
+        start = perf_counter()
         label_filter = sitk.LabelShapeStatisticsImageFilter()
         label_filter.Execute(l3_volume)
 
@@ -98,11 +102,10 @@ def segment_data(input_dir: Union[str, Path],
         # get the L3 body centroid which is to the left of whole vertebre centroid, ie in front of it 
         for label, comp_center in component_centroids.items():
             if comp_center[0] <= centroid_l3[1]:
-                # just need the axial slice index of vertebra's body centroid
+                # get the centroid's index
                 l3_body_centroid_index = sagittal_slice.TransformPhysicalPointToIndex(comp_center)        
         
-        input_volume = sitk.ReadImage(data_file)
-        input_volume = sitk.DICOMOrient(input_volume, "RAS")
+        runtime_duration['vert_body_select'] = perf_counter() - start
         
         slices_num = kwargs.get("slices_num", 0)
         if slices_num > 0:
@@ -110,16 +113,16 @@ def segment_data(input_dir: Union[str, Path],
             slices_range = (l3_body_centroid_index[-1] - slices_num, l3_body_centroid_index[-1] + slices_num)
             
             if slices_range[0] < 0:
-                print(f"lower index {slices_range[0]} is outside extent for Z dimension, setting to 0")
+                tqdm.write(f"lower index {slices_range[0]} is outside extent for Z dimension, setting to 0")
                 slices_range[0] = 0
             elif slices_range[1] > z_size:
                 slices_range[1] = z_size  
-                print(f"upper index {slices_range[1]} is outside extent for Z dimension {z_size}, setting to {z_size}")
+                tqdm.write(f"upper index {slices_range[1]} is outside extent for Z dimension {z_size}, setting to {z_size}")
                            
-            print(f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}, middle slice index is {l3_body_centroid_index[-1]}")
+            tqdm.write(f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}, middle slice index is {l3_body_centroid_index[-1]}")
             l3_slices_volume = input_volume[..., slices_range[0]:slices_range[1]]
         else:
-            print(f"extracting single slice at {l3_body_centroid_index}")
+            tqdm.write(f"extracting single slice at {l3_body_centroid_index}")
             l3_slices_volume = input_volume[..., l3_body_centroid_index]
             
         l3_slices_filepath = data_outdir.joinpath("l3_slices.nii.gz")
@@ -127,17 +130,26 @@ def segment_data(input_dir: Union[str, Path],
             sitk.WriteImage(l3_slices_volume, l3_slices_filepath)
         except RuntimeError as err:
             print(err)
-        print(f"saved L3 volume slices to '{l3_slices_filepath}'")
+        tqdm.write(f"saved L3 volume slices to '{l3_slices_filepath}'")
+        
+    return {'l3_body_centroid_index': l3_body_centroid_index, 'runtime_duration': runtime_duration}
          
          
 def segment_tissues(input_dir: Union[str, Path],
                     output_dir: Union[str, Path],
                     metrics: list = None, **kwargs):
     
-    l3_slices_filepath = input_dir.joinpath("l3_slices.nii.gz")
-    l3_muscle_pred_filepath = output_dir.joinpath("l3_muscle_preds.nii.gz")
+    if not isinstance(input_dir, Path):
+        input_dir = Path(input_dir)
     
-    print("starting muscle segmentation")
+    if not isinstance(output_dir, Path):
+        output_dir = Path(output_dir)
+    
+    l3_slices_filepath = input_dir.joinpath("l3_slices.nii.gz")
+    l3_muscle_pred_filepath = output_dir.joinpath("l3_tissue_preds.nii.gz")
+    
+    print(f"\nstarting tissue segmentation for {input_dir}")
+    runtime_duration = {}
     
     start = perf_counter()
     predict_cases(
@@ -159,6 +171,11 @@ def segment_tissues(input_dir: Union[str, Path],
         disable_postprocessing=True
     )
     
+    runtime_duration['tissue_seg'] = perf_counter() - start
+    print(f"tissue segmentation finished in {runtime_duration['tissue_seg']}")
     
-    
+    tissue_masks = sitk.ReadImage(l3_muscle_pred_filepath)
+    label_filter = sitk.LabelShapeStatisticsImageFilter()
+    label_filter.Execute(tissue_masks)
+    print(f"tissue labels: {label_filter.GetLabels()}")
     
