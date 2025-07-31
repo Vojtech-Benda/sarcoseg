@@ -1,13 +1,9 @@
 import sys
 import argparse
-import os
-from pathlib import Path
-from time import perf_counter
-from totalsegmentator.python_api import totalsegmentator
-import SimpleITK as sitk
-from nnunet.inference import predict
 
 from src.preprocessing import preprocess_dicom
+from src.segmentation import segment_data
+from src.segmentation import segment_tissues
 
 def get_args():
     parser = argparse.ArgumentParser(prog="l3smi", description="segmentation of L3 axial tissues")
@@ -31,10 +27,11 @@ def get_args():
                                    action="store_true", 
                                    help="anonymize DICOM series before saving")
     
-    dicom_tags = ("PatientSex", "PatientAge", "PatientHeight")
+    dicom_tags = ("PatientID", "PatientName", "StudyInstanceUID", "StudyDate", "SeriesDescription", "SliceThickness", "PatientSex", "PatientAge", "PatientHeight")
     preprocess_parser.add_argument("--dicom_tags", 
                                    nargs="+", 
                                    help=f"space separated list of additional DICOM tags to extract (default: {dicom_tags})")    
+    
     segment_parser = sub_parsers.add_parser("segment", 
                                             help="segment muscle and fat tissue at L3 level in axial viewl",
                                             description="segmentation options")
@@ -48,10 +45,10 @@ def get_args():
                                 type=str, 
                                 help="path to output directory",
                                 default="./outputs")
-    segment_parser.add_argument("--volume_slices",
+    segment_parser.add_argument("--slices_num",
                                 type=int, 
                                 help=("number of slices in superior AND inferior direction from centroid index to extract for tissue segmentation\n"
-                                      "example: volume_slices=10, extract [centroid_index - 10:centroid_index + 10], segmentation over 20 slices"),
+                                      "example: slices_num=10, extract [centroid_index - 10:centroid_index + 10], segmentation over 20 slices"),
                                 default=0)
     segment_parser.add_argument("--add_metrics",
                                 nargs="+",
@@ -155,20 +152,27 @@ def main():
     print(times, sum(times.values()))
 """
 
-
-def segment_data(args: argparse.ArgumentParser):
-    raise NotImplementedError
-
-
 if __name__ == "__main__":
-    
     args = get_args()
     
     if args.command == "preprocess":
-        preprocess_dicom(args.input_dir, args.output_dir, anonymize=args.anonymize, dicom_tags=args.dicom_tags)
+        preprocess_dicom(args.input_dir, 
+                         args.output_dir, 
+                         anonymize=args.anonymize, 
+                         dicom_tags=args.dicom_tags)
     elif args.command == "segment":
-        print("running segmentation")
-        print(args)
+        segment_data(args.input_dir,
+                     args.output_dir,
+                     slices_num=args.slices_num,
+                     save_segmentations=args.save_segmentations
+                     )
+        # segment_tissues(args.input_dir,
+        #                 args.output_dir,
+        #                 vert_center_axial_slices,
+        #                 metrics=args.add_metrics,
+        #                 slices_range = args.volume_slices,
+        #                 save_segmentations=args.save_segmentations,
+        #                 )
     else:
-        print("unknown command")
+        print(f"unknown command '{args.command}'")
         sys.exit(-1)    
