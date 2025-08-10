@@ -1,5 +1,6 @@
 import sys
 import argparse
+from pathlib import Path
 
 from src.preprocessing import preprocess_dicom
 from src.segmentation import segment_spine
@@ -163,17 +164,17 @@ if __name__ == "__main__":
             dicom_tags=args.dicom_tags
             )
     elif args.command == "segment":
-        # spine_results = segment_spine(
-        #     args.input_dir,
-        #     args.output_dir,
-        #     slices_num=args.slices_num,
-        #     save_segmentations=args.save_segmentations
-        #     )
+        spine_results = segment_spine(
+            args.input_dir,
+            args.output_dir,
+            slices_num=args.slices_num,
+            save_segmentations=args.save_segmentations
+            )
         
-        for direc in ("outputs/sarco_1", "outputs/sarco_2_arterial", "outputs/sarco_3_venous", "outputs/sarco_4"):
+        for direc in ("sarco_1", "sarco_2_arterial", "sarco_3_venous", "sarco_4"):
             tissue_results = segment_tissues(
-                direc,
-                direc,
+                Path("outputs", direc),
+                Path("outputs", direc),
                 metrics=args.add_metrics,
                 save_segmentations=args.save_segmentations
                 )

@@ -1,13 +1,14 @@
 import SimpleITK as sitk
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("agg")
 
-
-raw_data = sitk.ReadImage("outputs/l3_slices.nii.gz")
-predict_data = sitk.ReadImage("outputs/l3_slices_preds.nii.gz")
+raw_data = sitk.ReadImage("outputs/l3_slices_win.nii.gz")
+predict_data = sitk.ReadImage("outputs/l3_slices_preds_win.nii.gz")
 
 spacing = raw_data.GetSpacing()
 pixel_area = np.prod(spacing[:-1]) / 100.0 # in cm^2
-print(pixel_area)
 
 label_filter = sitk.LabelShapeStatisticsImageFilter()
 
