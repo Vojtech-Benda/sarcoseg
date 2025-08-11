@@ -154,24 +154,24 @@ def segment_spine(input_nifti_path: Union[str, Path],
 
 
          
-def segment_tissues(input_nifti_paths: list[Union[Path, str]],
-                    output_dir: Union[str, Path],
+def segment_tissues(tissue_volume_path: Union[Path, str],
+                    case_output_dir: Union[Path, str],
                     metrics: list = None, **kwargs):
     
-    output_filepaths = []
-    for path in input_nifti_paths:
-        name_parts = path.name.split("_")[:-1] # get ["sarco", n, phase, "l3"], exclude _slices.nii.gz
-        output_filename = "_".join(name_parts) + "_tissue_masks.nii.gz"
-        output_filepaths.append(Path(output_dir, output_filename))
+    if not isinstance(case_output_dir, Path):
+        case_output_dir = Path(case_output_dir)
     
-    print(f"\nstarting tissue segmentation for {len(input_nifti_paths)} nifti files")
-    print(f"'{input_nifti_paths}'")
+    print(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
+    filename_parts = tissue_volume_path.name.split("_")[:4] # split results into ["sarco", n, phase, "l3", "slices"]
+    output_filename = "_".join(filename_parts) + "_tissue_mask.nii.gz"
+    
+    output_filepath = Path(case_output_dir, output_filename)
 
     start = perf_counter()
     predict_cases(
         model=str(MODEL_DIR),
-        list_of_lists=[input_nifti_paths],
-        output_filenames=output_filepaths,
+        list_of_lists=[[tissue_volume_path]],
+        output_filenames=[output_filepath],
         folds="all",
         save_npz=False,
         num_threads_preprocessing=8,
@@ -190,9 +190,10 @@ def segment_tissues(input_nifti_paths: list[Union[Path, str]],
     duration = perf_counter() - start
     print(f"tissue segmentation finished in {duration}")
     
-    metric_results = compute_metrics(output_filepaths, metrics)
+    tissue_mask = nib.load(output_filepath)
+    tissue_mask = nib.funcs.as_closest_canonical(tissue_mask)
     
-    return {'tissue_mask_paths': output_filepaths, 'duration': duration, 'metric_results': metric_results}
+    return {'tissue_mask': tissue_mask, 'tissue_mask_paths': output_filepath, 'duration': duration}
 
 
 def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image, 
@@ -290,29 +291,29 @@ def extract_slices(ct_volume_path: Union[Path, str],
     duration = perf_counter() - start
     print(f"slice extraction finished in {duration} seconds")
     
-    return {'sliced_volume': sliced_ct_volume, 'sliced_volume_path': output_filepath, 'duration': duration}
+    return {'sliced_volume_path': output_filepath, 'duration': duration}
 
 
 def postprocess():
     pass
 
 
-def compute_metrics(tissue_mask_paths: list[Union[Path, str]],
+def compute_metrics(tissue_mask: list[Union[nib.nifti1.Nifti1Image, Path, str]],
                     metrics: list):
     
-    tissue_masks = {Path(path).name: nib.load(path) for path in tissue_mask_paths}
+    if any(isinstance(tissue_mask, c) for c in (Path, str)):
+        tissue_mask = nib.load(tissue_mask)
     
-    results = {}
-    for name, mask in tissue_masks.items():
-        spacing = mask.header.get_zooms()
-        pixel_size = np.prod(spacing[:2]) / 100.0
-        array = mask.get_fdata()
+    tissue_mask = nib.funcs.as_closest_canonical(tissue_mask)
+    spacing = tissue_mask.header.get_zooms() # spacing is in mm
+    pixel_size = np.prod(spacing[:2]) / 100.0 # pixel size is in cm^2
+    
+    metric_results = {}
+    array = tissue_mask.get_fdata()
+    
+    area = {
+        tissue: np.count_nonzero(array == label) * pixel_size for tissue, label in TARGET_TISSUES_MAP.items()
+    }
         
-        area = {
-            tissue: np.count_nonzero(array == label) * pixel_size for tissue, label in TARGET_TISSUES_MAP.items()
-        }
-        results[name] = {
-            'area': area
-        }
-        
-    return results
+    metric_results['area'] = area
+    return metric_results

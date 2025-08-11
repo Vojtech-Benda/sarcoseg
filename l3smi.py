@@ -167,39 +167,45 @@ if __name__ == "__main__":
         print("finished preprocessing DICOM series")
     elif args.command == "segment":
         
+        case_dirs: list[Path] = list(Path("inputs").glob("*/"))
+        print(f"found {len(case_dirs)} cases")
         
-        for input_ct_nifti_path in Path(args.input_dir).glob("*/*.nii.gz"):
-            case_output_dir = Path(args.output_dir, input_ct_nifti_path.parts[1])
+        for case_dir in case_dirs:
+            case_output_dir = Path(args.output_dir, case_dir.name)
             case_output_dir.mkdir(exist_ok=True)
             
-            spine_results = segmentation.segment_spine(
-                input_ct_nifti_path,
-                case_output_dir,
-                slices_num=args.slices_num,
-                save_segmentations=args.save_segmentations
+            ct_volume_paths = list(case_dir.glob("*.nii.gz"))
+            print(f"found {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}")
+            for ct_volume_path in ct_volume_paths:
+            
+                spine_results = segmentation.segment_spine(
+                    ct_volume_path,
+                    case_output_dir,
+                    slices_num=args.slices_num,
+                    save_segmentations=args.save_segmentations
+                    )
+            
+                spine_mask = spine_results['spine_mask'] if 'spine_mask' in spine_results else spine_results['spine_mask_path']
+                
+                slice_results = segmentation.extract_slices(
+                    ct_volume_path,
+                    case_output_dir,
+                    spine_mask,
+                    args.slices_num
                 )
             
-            spine_mask = spine_results['spine_mask'] if 'spine_mask' in spine_results else spine_results['spine_mask_path']
-            
-            slice_results = segmentation.extract_slices(
-                input_ct_nifti_path,
-                case_output_dir,
-                spine_mask,
-                args.slices_num
-            )
-        
-        case_dirs = os.listdir(args.output_dir)
-        for case_dir in case_dirs:
-            case_dir = Path(args.output_dir, case_dir)
-            input_ct_tissue_paths = list(case_dir.glob("*_slices.nii.gz"))
-            tissue_results = segmentation.segment_tissues(
-                input_ct_tissue_paths,
-                case_dir,
-                metrics=args.add_metrics,
-                save_segmentations=args.save_segmentations
+                tissue_results = segmentation.segment_tissues(
+                    slice_results['sliced_volume_path'],
+                    case_output_dir,
+                    metrics=args.add_metrics,
+                    save_segmentations=args.save_segmentations
+                    )
+                
+                metric_results = segmentation.compute_metrics(
+                    tissue_results['tissue_mask'],
+                    metrics=args.add_metrics
                 )
-            
-            
+                print(metric_results['area'])
     else:
         print(f"unknown command '{args.command}'")
         sys.exit(-1)    
