@@ -1,18 +1,16 @@
 from typing import Union
 from pathlib import Path
-import os
-import glob
 from time import perf_counter
-from dataclasses import dataclass
 
 from totalsegmentator.python_api import totalsegmentator
-import SimpleITK as sitk
 import numpy as np
 from numpy import typing as npt
 
 import nibabel as nib
 import skimage as sk
 from nnunet.inference.predict import predict_cases
+
+from src import segmentation
 
 TARGET_VERTEBRAE_MAP = {
     "vertebrae_L1": 31, 
@@ -35,9 +33,56 @@ TARGET_TISSUES_MAP = {
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
-def segment_spine(input_nifti_path: Union[str, Path], 
-                  output_dir: Union[str, Path] = None, 
-                  **kwargs) -> dict:
+def segment_ct(
+    input_dir: str,
+    output_dir: str,
+    additional_metrics: list,
+    **kwargs
+    ):
+    case_dirs: list[Path] = list(Path("inputs").glob("*/"))
+    print(f"found {len(case_dirs)} cases")
+
+    for case_dir in case_dirs:
+        case_output_dir = Path(output_dir, case_dir.name)
+        case_output_dir.mkdir(exist_ok=True)
+
+        ct_volume_paths = list(case_dir.glob("*.nii.gz"))
+        print(f"found {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}")
+        
+        slices_num = kwargs.get('slices_num', 0)
+        save_segmentations = kwargs.get('save_segmentations')
+        
+        for ct_volume_path in ct_volume_paths:
+            spine_results = segmentation.segment_spine(
+                    ct_volume_path,
+                    case_output_dir,
+                    )
+
+            spine_mask = spine_results['spine_mask'] if 'spine_mask' in spine_results else spine_results['spine_mask_path']
+
+            slice_results = segmentation.extract_slices(
+                    ct_volume_path,
+                    case_output_dir,
+                    spine_mask,
+                    slices_num
+                )
+
+            tissue_results = segmentation.segment_tissues(
+                    slice_results['sliced_volume_path'],
+                    case_output_dir,
+                    )
+
+            metric_results = segmentation.compute_metrics(
+                    tissue_results['tissue_mask'],
+                    metrics=additional_metrics
+                )
+            print(metric_results['area'])
+
+
+def segment_spine(
+    input_nifti_path: Union[str, Path], 
+    output_dir: Union[str, Path] = None
+    ) -> dict:
     """
     Segment spine vertebrae.
 
@@ -76,87 +121,13 @@ def segment_spine(input_nifti_path: Union[str, Path],
     spine_mask = nib.funcs.as_closest_canonical(spine_mask)
     
     return {'spine_mask': spine_mask, 'spine_mask_path': spine_mask_path, 'duration': duration}
-    
-    # try:
-    #     nib.save(pred_mask, spine_pred_filepath)
-    #     print(f"saved spine segmentation mask to '{spine_pred_filepath}'")
-    # except RuntimeError as err:
-    #     print(err)
-    # arr = nibabel_mask.get_fdata().astype(np.uint8)
-    
-    """
-    pred_volume = sitk.ReadImage(spine_pred_filepath)
-    pred_volume = sitk.DICOMOrient(pred_volume, "RAS")
-    input_volume = sitk.ReadImage(data_file)
-    input_volume = sitk.DICOMOrient(input_volume, "RAS")
-    
-    l3_volume = pred_volume == TARGET_VERTEBRAE_MAP['vertebrae_L3']
-
-    start = perf_counter()
-    label_filter = sitk.LabelShapeStatisticsImageFilter()
-    label_filter.Execute(l3_volume)
-
-    centroid_l3 = label_filter.GetCentroid(1) # there is only one non-zero label
-    centroid_l3_index = l3_volume.TransformPhysicalPointToIndex(centroid_l3)
-    
-    sagittal_slice = l3_volume[centroid_l3_index[0], ...]
-
-    components_l3 = sitk.ConnectedComponent(sagittal_slice)
-    label_filter.Execute(components_l3)
-    
-    # get the 2 largest components in sagittal slice
-    # should correspond to vertebre body and vertebre spine
-    largest_components = sorted(
-        label_filter.GetLabels(), 
-        key=lambda label: label_filter.GetNumberOfPixels(label),
-        reverse=True
-        )[:2]
-    
-    component_centroids = {comp: label_filter.GetCentroid(comp) for comp in largest_components}
-    
-    # get the L3 body centroid which is to the left of whole vertebre centroid, ie in front of it 
-    for label, comp_center in component_centroids.items():
-        if comp_center[0] <= centroid_l3[1]:
-            # get the centroid's index
-            l3_body_centroid_index = sagittal_slice.TransformPhysicalPointToIndex(comp_center)        
-    
-    runtime_duration['vert_body_select'] = perf_counter() - start
-    
-    slices_num = kwargs.get("slices_num", 0)
-    if slices_num > 0:
-        z_size = input_volume.GetSize()[-1]
-        slices_range = (l3_body_centroid_index[-1] - slices_num, l3_body_centroid_index[-1] + slices_num)
-        
-        if slices_range[0] < 0:
-            print(f"lower index {slices_range[0]} is outside extent for Z dimension, setting to 0")
-            slices_range[0] = 0
-        elif slices_range[1] > z_size:
-            slices_range[1] = z_size  
-            print(f"upper index {slices_range[1]} is outside extent for Z dimension {z_size}, setting to {z_size}")
-                        
-        print(f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}, middle slice index is {l3_body_centroid_index[-1]}")
-        l3_slices_volume = input_volume[..., slices_range[0]:slices_range[1] + 1]
-    else:
-        print(f"extracting single slice at {l3_body_centroid_index}")
-        l3_slices_volume = input_volume[..., l3_body_centroid_index[-1]]
-        
-    l3_slices_filepath = data_outdir.joinpath("l3_slices.nii.gz")
-    try:
-        sitk.WriteImage(l3_slices_volume, l3_slices_filepath)
-    except RuntimeError as err:
-        print(err)
-    print(f"saved L3 volume slices to '{l3_slices_filepath}'")
-    """
-    
-    
-    # return {'l3_body_centroid_index': l3_body_centroid_index, 'runtime_duration': runtime_duration}
-
-
 
          
-def segment_tissues(tissue_volume_path: Union[Path, str],
-                    case_output_dir: Union[Path, str],
-                    metrics: list = None, **kwargs):
+def segment_tissues(
+    tissue_volume_path: Union[Path, str],
+    case_output_dir: Union[Path, str],
+    **kwargs
+    ):
     
     if not isinstance(case_output_dir, Path):
         case_output_dir = Path(case_output_dir)
@@ -196,8 +167,10 @@ def segment_tissues(tissue_volume_path: Union[Path, str],
     return {'tissue_mask': tissue_mask, 'tissue_mask_paths': output_filepath, 'duration': duration}
 
 
-def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image, 
-                                 vert_labels: int) -> npt.NDArray:
+def get_vertebrae_body_centroids(
+    mask: nib.nifti1.Nifti1Image, 
+    vert_labels: int
+    ) -> int:
     """
     Get vertebrae's body centroid coordinates in pixel space.
 
@@ -206,10 +179,9 @@ def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image,
         vert_labels (int): vertebrae mask labels
 
     Returns:
-        body_centroids_z (NDArray): 
+        body_centroids_z (int): 
         index of vertebrae body centroid along Z (superior) direction in voxel space
     """    
-    
     
     mask_arr = mask.get_fdata().astype(np.uint8)
     
@@ -244,11 +216,13 @@ def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image,
     return vert_body_centroid[-1]
 
 
-def extract_slices(ct_volume_path: Union[Path, str],
-                   output_dir: Union[Path, str],
-                   spine_mask: Union[nib.nifti1.Nifti1Image, Path, str],
-                   slices_num: int = 0) -> None:
-    
+def extract_slices(
+    ct_volume_path: Union[Path, str],
+    output_dir: Union[Path, str],
+    spine_mask: Union[nib.nifti1.Nifti1Image, Path, str],
+    slices_num: int = 0
+    ) -> None:
+
     if any([isinstance(spine_mask, c) for c in (Path, str)]):
         if spine_mask.exists():
             spine_mask = nib.load(spine_mask)
@@ -298,8 +272,10 @@ def postprocess():
     pass
 
 
-def compute_metrics(tissue_mask: list[Union[nib.nifti1.Nifti1Image, Path, str]],
-                    metrics: list):
+def compute_metrics(
+    tissue_mask: list[Union[nib.nifti1.Nifti1Image, Path, str]],
+    metrics: list
+    ):
     
     if any(isinstance(tissue_mask, c) for c in (Path, str)):
         tissue_mask = nib.load(tissue_mask)
