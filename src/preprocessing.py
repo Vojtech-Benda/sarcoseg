@@ -1,5 +1,6 @@
 import sys
 import re
+import os
 
 from pathlib import Path
 from typing import Union, Optional
@@ -87,12 +88,13 @@ def filter_series_to_segment(all_series: dict,
         list: list consisting of SeriesMetadata dataclass for native CT and each contract phase CT.
     """
     
-    contrast_series: dict[str, list[SeriesMetadata]] = {
+    series_by_contrast: dict[str, list[SeriesMetadata]] = {
+        'native': [],
         'arterial': [],
         'nephro': [],
         'venous': []
         }
-    native_series = []
+    # native_series = []
     
     for _, filepaths in all_series.items():
         
@@ -134,7 +136,7 @@ def filter_series_to_segment(all_series: dict,
         if contrast_match:
             series_data.contrast_phase = contrast_match.group().lower()
         else:
-            series_data.contrast_phase = "none"
+            series_data.contrast_phase = "native"
         
         # add additional tags for extraction
         if additional_dicom_tags is not None:
@@ -143,23 +145,25 @@ def filter_series_to_segment(all_series: dict,
                 series_data.additional_tags[tag] = tag_value
         
         # separate into contrast and no contrast
-        if series_data.has_contrast and series_data.contrast_phase != "none":
-            contrast_series[series_data.contrast_phase].append(series_data)
-        else:
-            native_series.append(series_data)
+        series_by_contrast[series_data.contrast_phase].append(series_data)
+        # if series_data.has_contrast and series_data.contrast_phase != "native":
+        #     contrast_series[series_data.contrast_phase].append(series_data)
+        # else:
+        #     native_series.append(series_data)
             
     # select the series with lowest slice thickness AND highest number of slices
-    selected_native_series = min(native_series, key=lambda v: (v.slice_thickness, -v.num_of_files))
+    # selected_native_series = min(native_series, key=lambda v: (v.slice_thickness, -v.num_of_files))
     
     # same thing but for each contrast phase key - {'arterial': [...], 'nephro': [...], 'venous': [...]}
     # skips empty lists
-    selected_contrast_series_by_phase = {
-        phase: min(series_list, key=lambda v: (v.slice_thickness, v.num_of_files))
-        for phase, series_list in contrast_series.items() if series_list
+    selected_series_by_contrast_phase = {
+        phase: min(series_list, key=lambda v: (v.slice_thickness, -v.num_of_files))
+        for phase, series_list in series_by_contrast.items() if series_list
     }
 
     # return as a single list of selected series to segment
-    return [selected_native_series] + list(selected_contrast_series_by_phase.values())
+    # return [selected_native_series] + list(selected_series_by_contrast_phase.values())
+    return selected_series_by_contrast_phase
     
 
 def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata, add_dicom_tags: list) -> int:
@@ -187,7 +191,7 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
     row_data = [
         data.patient_id,
         pseudoname,
-        f"{pseudoname}.nii.gz",
+        f"{pseudoname}_{data.contrast_phase}.nii.gz",
         data.study_instance_uid,
         data.study_date,
         data.series_description,
@@ -243,6 +247,7 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         patient_tags_df = pd.DataFrame([], columns=df_cols)
         patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
     
+    i = 1
     for root, _, files in input_dir.walk():
         if not files or "DICOMDIR" in files:
             continue
@@ -253,24 +258,31 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
                                                      additional_dicom_tags=additional_dicom_tags)
         print(f"found {len(series_to_segment)} valid series for segmentation")
         
-        for data in series_to_segment:
+        # get case pseudoname
+        # pseudoname = write_dicom_tags(patient_tags_df_path, 
+        #                                 data, 
+        #                                 additional_dicom_tags)
+        
+        pseudoname = f"sarco_{i}"
+        i += 1
+        output_case_dir = Path(output_dir, pseudoname)
+        os.makedirs(output_case_dir, exist_ok=True)
+        
+        for data in series_to_segment.values():
             dicom_datasets = [pydicom.dcmread(file) for file in data.filepaths]
             dicom_datasets = sort_dicoms(dicom_datasets)
             
             validate_orientation(dicom_datasets)
             
-            pseudoname = write_dicom_tags(patient_tags_df_path, 
-                                          data, 
-                                          additional_dicom_tags)
+            nifti_filename = f"{pseudoname}_{data.contrast_phase}"
             
-            nifti_filename = f"{pseudoname}_{data.contrast_phase}" if data.has_contrast else pseudoname
-            output_path = Path(output_dir, f"{nifti_filename}.nii.gz")
+            output_filepath = output_case_dir.joinpath(f"{nifti_filename}.nii.gz")
             
             try:
                 dicom_array_to_nifti(dicom_list=dicom_datasets,
-                                    output_file=output_path,
+                                    output_file=output_filepath,
                                     reorient_nifti=True)
-                print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_path.name}'")
+                print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_filepath.name}'")
             except RuntimeError as err:
                 print(err)
             

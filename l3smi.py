@@ -1,10 +1,11 @@
 import sys
 import argparse
 from pathlib import Path
+import glob
+import os
 
-from src.preprocessing import preprocess_dicom
-from src.segmentation import segment_spine
-from src.segmentation import segment_tissues
+from src import preprocessing
+from src import segmentation
 
 def get_args():
     parser = argparse.ArgumentParser(prog="l3smi", description="segmentation of L3 axial tissues")
@@ -157,27 +158,48 @@ if __name__ == "__main__":
     args = get_args()
     
     if args.command == "preprocess":
-        preprocess_dicom(
+        preprocessing.preprocess_dicom(
             args.input_dir, 
             args.output_dir, 
             anonymize=args.anonymize, 
             dicom_tags=args.dicom_tags
             )
+        print("finished preprocessing DICOM series")
     elif args.command == "segment":
-        spine_results = segment_spine(
-            args.input_dir,
-            args.output_dir,
-            slices_num=args.slices_num,
-            save_segmentations=args.save_segmentations
+        
+        
+        for input_ct_nifti_path in Path(args.input_dir).glob("*/*.nii.gz"):
+            case_output_dir = Path(args.output_dir, input_ct_nifti_path.parts[1])
+            case_output_dir.mkdir(exist_ok=True)
+            
+            spine_results = segmentation.segment_spine(
+                input_ct_nifti_path,
+                case_output_dir,
+                slices_num=args.slices_num,
+                save_segmentations=args.save_segmentations
+                )
+            
+            spine_mask = spine_results['spine_mask'] if 'spine_mask' in spine_results else spine_results['spine_mask_path']
+            
+            slice_results = segmentation.extract_slices(
+                input_ct_nifti_path,
+                case_output_dir,
+                spine_mask,
+                args.slices_num
             )
         
-        for direc in ("sarco_1", "sarco_2_arterial", "sarco_3_venous", "sarco_4"):
-            tissue_results = segment_tissues(
-                Path("outputs", direc),
-                Path("outputs", direc),
+        case_dirs = os.listdir(args.output_dir)
+        for case_dir in case_dirs:
+            case_dir = Path(args.output_dir, case_dir)
+            input_ct_tissue_paths = list(case_dir.glob("*_slices.nii.gz"))
+            tissue_results = segmentation.segment_tissues(
+                input_ct_tissue_paths,
+                case_dir,
                 metrics=args.add_metrics,
                 save_segmentations=args.save_segmentations
                 )
+            
+            
     else:
         print(f"unknown command '{args.command}'")
         sys.exit(-1)    
