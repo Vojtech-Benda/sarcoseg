@@ -76,7 +76,7 @@ def segment_ct(
             postproc_results = segmentation.postprocess_tissue_masks(
                 tissue_results['mask'],
                 tissue_results['volume'],
-                tissue_results['affine'],
+                tissue_results['mask_affine'],
                 tissue_results['mask_filepath']
             )
 
