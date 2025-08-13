@@ -3,6 +3,7 @@ import argparse
 
 from src import preprocessing
 from src import segmentation
+from src.setup_project import setup_project
 
 
 def get_args():
@@ -59,8 +60,36 @@ def get_args():
                                 help="save segmentation masks")
 
     setup_parser = sub_parsers.add_parser("setup",
-                                          help="setup the project for usage"
-                                          )
+                                          help="setup the project for usage",
+                                          description="setup project options")
+    setup_parser.add_argument("-i", 
+                              "--input_dir",
+                              help="path to input directory",
+                              type=str,
+                              default="./inputs",
+                              required=True
+                              )
+    setup_parser.add_argument("-o", 
+                              "--output_dir",
+                              help="path to output directory",
+                              type=str,
+                              default="./outputs"
+                              )    
+    setup_parser.add_argument("-m",
+                              "--model_dir",
+                              help="path to model directory",
+                              type=str,
+                              default="./models"
+                              )
+    setup_parser.add_argument("-n",
+                              "--model_name",
+                              help="model name",
+                              type=str,
+                              default="muscle_fat_tisse_stanford_0_0_2")
+    setup_parser.add_argument("-r",
+                              "--remove_model_zip",
+                              action="store_true",
+                              default=False)
 
     return parser.parse_args()
 
@@ -87,6 +116,14 @@ if __name__ == "__main__":
             )
         print("finished CT segmentation")
         
+    elif args.command == "setup":
+        setup_project(
+            args.input_dir,
+            args.output_dir,
+            args.model_dir,
+            args.model_name,
+            args.remove_model_zip
+        )
     else:
         print(f"unknown command '{args.command}'")
         sys.exit(-1)    
