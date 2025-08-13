@@ -27,10 +27,10 @@ def get_args():
                                    action="store_true", 
                                    help="anonymize DICOM series before saving")
     
-    dicom_tags = ("PatientID", "PatientName", "StudyInstanceUID", "StudyDate", "SeriesDescription", "SliceThickness", "PatientSex", "PatientAge", "PatientHeight")
+    dicom_tags = ("PatientID", "StudyInstanceUID", "StudyDate", "SeriesDescription", "SliceThickness")
     preprocess_parser.add_argument("--dicom_tags", 
                                    nargs="+", 
-                                   help=f"space separated list of additional DICOM tags to extract (default: {dicom_tags})")    
+                                   help=f"space separated list of additional DICOM tags to extract \n(default: {dicom_tags})")    
     
     segment_parser = sub_parsers.add_parser("segment", 
                                             help="segment muscle and fat tissue at L3 level in axial viewl",
@@ -57,6 +57,10 @@ def get_args():
     segment_parser.add_argument("--save_segmentations", 
                                 action="store_true", 
                                 help="save segmentation masks")
+
+    setup_parser = sub_parsers.add_parser("setup",
+                                          help="setup the project for usage"
+                                          )
 
     return parser.parse_args()
 
