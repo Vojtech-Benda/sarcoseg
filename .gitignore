@@ -6,3 +6,10 @@ outputs/
 .venv/
 
 models/
+
+# ide dirs
+.vscode/*
+.idea/*
+
+# pycache
+__pycache__
