@@ -29,6 +29,7 @@ TARGET_TISSUES_MAP = {
     "muscle": 4 
 }
 
+TISSUE_LABEL_INDEX = list(TARGET_TISSUES_MAP.keys())
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
@@ -39,7 +40,7 @@ def segment_ct(
     additional_metrics: list,
     **kwargs
     ):
-    case_dirs: list[Path] = list(Path("inputs").glob("*/"))
+    case_dirs: list[Path] = list(Path(input_dir).glob("*/"))
     print(f"found {len(case_dirs)} cases")
 
     for case_dir in case_dirs:
@@ -54,27 +55,35 @@ def segment_ct(
         
         for ct_volume_path in ct_volume_paths:
             spine_results = segmentation.segment_spine(
-                    ct_volume_path,
-                    case_output_dir,
-                    )
+                ct_volume_path,
+                case_output_dir,
+                )
 
             spine_mask = spine_results['spine_mask'] if 'spine_mask' in spine_results else spine_results['spine_mask_path']
 
             slice_results = segmentation.extract_slices(
-                    ct_volume_path,
-                    case_output_dir,
-                    spine_mask,
-                    slices_num
+                ct_volume_path,
+                case_output_dir,
+                spine_mask,
+                slices_num
                 )
 
             tissue_results = segmentation.segment_tissues(
-                    slice_results['sliced_volume_path'],
-                    case_output_dir,
-                    )
+                slice_results['sliced_volume_path'],
+                case_output_dir
+                )
+
+            postproc_results = segmentation.postprocess_tissue_masks(
+                tissue_results['mask'],
+                tissue_results['volume'],
+                tissue_results['affine'],
+                tissue_results['mask_filepath']
+            )
 
             metric_results = segmentation.compute_metrics(
-                    tissue_results['tissue_mask'],
-                    metrics=additional_metrics
+                    postproc_results['processed_masks'],
+                    metrics=additional_metrics,
+                    spacing=tissue_results.get('spacing', None)
                 )
             print(metric_results['area'])
 
@@ -161,11 +170,33 @@ def segment_tissues(
     duration = perf_counter() - start
     print(f"tissue segmentation finished in {duration}")
     
-    tissue_mask = nib.load(output_filepath)
-    tissue_mask = nib.funcs.as_closest_canonical(tissue_mask)
+    mask = nib.as_closest_canonical(nib.load(output_filepath))
+    volume = nib.as_closest_canonical(nib.load(tissue_volume_path))
     
-    return {'tissue_mask': tissue_mask, 'tissue_mask_paths': output_filepath, 'duration': duration}
-
+    mask_arr = mask.get_fdata().astype(np.uint8)
+    volume_arr = volume.get_fdata()
+    
+    # squeeze 2D arrays from H x W x 1 -> H x W    
+    if all((mask_arr.shape[-1], volume_arr.shape[-1])) == 1:
+        mask_arr = np.squeeze(mask_arr, axis=-1)
+        volume_arr = np.squeeze(volume_arr, axis=-1)
+        
+        # get spacing for first two pixel directions
+        spacing = volume.header.get_zooms()[:-1]
+    elif all((mask_arr.shape[-1], volume_arr.shape[-1])) > 1:
+        spacing = volume.header.get_zooms()
+    else:
+        raise ValueError(f"non matching array shapes between mask {mask_arr.shape} and volume {volume_arr.shape}")
+        
+    return {
+        'volume': volume_arr, 
+        'mask': mask_arr, 
+        'mask_affine': mask.affine, 
+        'mask_filepath': output_filepath, 
+        'spacing': spacing, 
+        'duration': duration
+        }
+        
 
 def get_vertebrae_body_centroids(
     mask: nib.nifti1.Nifti1Image, 
@@ -268,27 +299,82 @@ def extract_slices(
     return {'sliced_volume_path': output_filepath, 'duration': duration}
 
 
-def postprocess():
-    pass
+def postprocess_tissue_masks(
+    mask_arr: npt.NDArray,
+    volume_arr: npt.NDArray,
+    affine: npt.NDArray,
+    output_nifti_filepath: Union[Path, str, None] = None
+    ):
+    
+    """
+    store tissue labels in separate z-axis
+    tissue      | label     | z-axis index
+    sat         | 1         | 0
+    vat         | 2         | 1
+    imat        | 3         | 2
+    muscle      | 4         | 3
+    """
+    start = perf_counter()
+    out = np.zeros((*mask_arr.shape, len(TARGET_TISSUES_MAP)), dtype=bool)
+    for i, label in enumerate(TARGET_TISSUES_MAP.values()):
+        
+        # for SAT (label == 1) use 200, for other tissues use 20
+        min_hole_size = 200 if label == 1 else 20
+            
+        out[..., i] = sk.morphology.remove_small_holes(mask_arr == label, min_hole_size)
+        
+        if label == 4:
+            # get muscle tissue pixels in HU
+            muscle_hu = volume_arr * out[..., 3]
+
+            imat_hu = np.logical_and(
+                muscle_hu <= -30, 
+                muscle_hu >= -190
+                )
+
+            imat_hu_filt = sk.morphology.remove_small_objects(imat_hu, 10)
+            out[imat_hu_filt, 2] = 1
+            out[imat_hu_filt, 3] = 0
+            
+    # convert processed labels into single slice array H x W x L -> H x W
+    out_nifti = np.zeros((*out.shape[:-1], 1), dtype=np.uint8)
+    for i in range(out.shape[-1]):
+        out_nifti[out[..., i] == 1, 0] = i + 1
+    out_nifti = nib.as_closest_canonical(nib.Nifti1Image(out_nifti, affine))
+    nib.save(out_nifti, output_nifti_filepath) # overwrite segmented image
+    
+    duration = perf_counter() - start
+    print(f"tissue postprocessing finished in {duration:.2f} second")
+    return {'processed_masks': out, 'duration': duration}
 
 
 def compute_metrics(
-    tissue_mask: list[Union[nib.nifti1.Nifti1Image, Path, str]],
-    metrics: list
+    tissue_mask_array: npt.NDArray,
+    metrics: list,
+    spacing=None
     ):
     
-    if any(isinstance(tissue_mask, c) for c in (Path, str)):
-        tissue_mask = nib.load(tissue_mask)
+    # if None use 1mm spacing in all directions
+    if spacing is None:
+        if len(tissue_mask_array.shape) == 2:
+            spacing = (1., 1.)
+        elif len(tissue_mask_array.shape) == 3:
+            spacing = (1., 1., 1.)
+        else:
+            raise ValueError(f"array of shape {tissue_mask_array.shape} is not supported, needs to be (H x W) or (H x W x D)")
     
-    tissue_mask = nib.funcs.as_closest_canonical(tissue_mask)
-    spacing = tissue_mask.header.get_zooms() # spacing is in mm
-    pixel_size = np.prod(spacing[:2]) / 100.0 # pixel size is in cm^2
+    
+    if len(spacing) == 2:
+        pixel_size = np.prod(spacing[:2]) / 100.0 # pixel size is in cm^2
+    elif len(spacing) == 3:
+        pixel_size = np.prod(spacing) / 10000.0 # pixel size is in cm^3
     
     metric_results = {}
-    array = tissue_mask.get_fdata()
     
+    # calculate area in cm^2
     area = {
-        tissue: np.count_nonzero(array == label) * pixel_size for tissue, label in TARGET_TISSUES_MAP.items()
+        tissue: np.count_nonzero(tissue_mask_array[..., TISSUE_LABEL_INDEX.index(tissue)]) * pixel_size
+        for tissue in TISSUE_LABEL_INDEX
     }
         
     metric_results['area'] = area
