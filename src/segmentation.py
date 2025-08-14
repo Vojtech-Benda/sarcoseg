@@ -76,7 +76,7 @@ def segment_ct(
             postproc_results = segmentation.postprocess_tissue_masks(
                 tissue_results['mask'],
                 tissue_results['volume'],
-                tissue_results['mask_affine'],
+                # tissue_results['mask_affine'],
                 tissue_results['mask_filepath']
             )
 
@@ -173,25 +173,25 @@ def segment_tissues(
     mask = nib.as_closest_canonical(nib.load(output_filepath))
     volume = nib.as_closest_canonical(nib.load(tissue_volume_path))
     
-    mask_arr = mask.get_fdata().astype(np.uint8)
-    volume_arr = volume.get_fdata()
-    
+    # mask_arr = mask.get_fdata().astype(np.uint8)
+    # volume_arr = volume.get_fdata()
+    spacing = volume.header.get_zooms()
     # squeeze 2D arrays from H x W x 1 -> H x W    
-    if all((mask_arr.shape[-1], volume_arr.shape[-1])) == 1:
-        mask_arr = np.squeeze(mask_arr, axis=-1)
-        volume_arr = np.squeeze(volume_arr, axis=-1)
+    # if all((mask_arr.shape[-1], volume_arr.shape[-1])) == 1:
+    #     # mask_arr = np.squeeze(mask_arr, axis=-1)
+    #     # volume_arr = np.squeeze(volume_arr, axis=-1)
         
-        # get spacing for first two pixel directions
-        spacing = volume.header.get_zooms()[:-1]
-    elif all((mask_arr.shape[-1], volume_arr.shape[-1])) > 1:
-        spacing = volume.header.get_zooms()
-    else:
-        raise ValueError(f"non matching array shapes between mask {mask_arr.shape} and volume {volume_arr.shape}")
+    #     # get spacing for first two pixel directions
+    #     spacing = volume.header.get_zooms()[:-1]
+    # elif all((mask_arr.shape[-1], volume_arr.shape[-1])) > 1:
+    #     spacing = volume.header.get_zooms()
+    # else:
+    #     raise ValueError(f"non matching array shapes between mask {mask_arr.shape} and volume {volume_arr.shape}")
         
     return {
-        'volume': volume_arr, 
-        'mask': mask_arr, 
-        'mask_affine': mask.affine, 
+        'volume': volume, 
+        'mask': mask, 
+        # 'mask_affine': mask.affine, 
         'mask_filepath': output_filepath, 
         'spacing': spacing, 
         'duration': duration
@@ -300,9 +300,9 @@ def extract_slices(
 
 
 def postprocess_tissue_masks(
-    mask_arr: npt.NDArray,
-    volume_arr: npt.NDArray,
-    affine: npt.NDArray,
+    mask: nib.Nifti1Image,
+    volume: nib.Nifti1Image,
+    affine: npt.NDArray = None,
     output_nifti_filepath: Union[Path, str, None] = None
     ):
     
@@ -315,6 +315,9 @@ def postprocess_tissue_masks(
     muscle      | 4         | 3
     """
     start = perf_counter()
+    mask_arr = mask.get_fdata().astype(np.uint8)
+    volume_arr = volume.get_fdata()
+    
     out = np.zeros((*mask_arr.shape, len(TARGET_TISSUES_MAP)), dtype=bool)
     for i, label in enumerate(TARGET_TISSUES_MAP.values()):
         
