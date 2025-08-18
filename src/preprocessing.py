@@ -15,7 +15,7 @@ from dicom2nifti.convert_dicom import dicom_array_to_nifti
 
 
 SERIES_DESC_PATTERN = re.compile(r'|'.join(
-    ("protocol", "topogram", "scout", "patient")
+    ("protocol", "topogram", "scout", "patient", "dose", "report")
     ), re.IGNORECASE)
 CONTRAST_PHASES = re.compile(r'|'.join(
     ("arterial", "nephro", "venous")
@@ -34,8 +34,9 @@ class SeriesMetadata:
     slice_thickness: Union[float, None] = None
     has_contrast: bool = False
     contrast_phase: str = None
-    kilo_voltage_peak: Union[float, None] = None,
+    kilo_voltage_peak: Union[float, None] = None
     irradiation_event_uid: str = None
+    mean_ctdi_vol: Union[float, None] = None
     dose_length_product: Union[float, None] = None
     
     additional_tags = {}
@@ -49,6 +50,8 @@ class SeriesMetadata:
             f"has contrast: {self.has_contrast}\n"
             f"contrast_phase: {self.contrast_phase}\n"
             f"kilovoltage peak: {self.kilo_voltage_peak}\n"
+            f"mean CTDIvol: {self.mean_ctdi_vol}\n"
+            f"dose length product: {self.dose_length_product}\n"
             )
         print(msg)
         
@@ -74,6 +77,7 @@ def sort_files_by_series_uid(
     first_file = pydicom.dcmread(Path(root_dir, filepaths[0]), stop_before_pixels=True)
     patient_id = first_file.PatientID
     
+    dose_report_path = None
     for path in filepaths:
         dicom_path = Path(root_dir, path)
         dataset = pydicom.dcmread(dicom_path, stop_before_pixels=True)
@@ -84,10 +88,9 @@ def sort_files_by_series_uid(
         else:
             files_by_uid[series_uid] = [dicom_path]
     
-        dose_report_path = None
         if "dose report" in dataset.SeriesDescription.lower():
             dose_report_path = dicom_path
-            print("found dose report file")
+            print(f"found dose report file at {dose_report_path}")
     
     print(f"\nid '{patient_id}' has {len(filepaths)} files across {len(files_by_uid.keys())} series")
     return files_by_uid, dose_report_path
@@ -199,7 +202,7 @@ def write_dicom_tags(path_df_dicom_tags: Union[Path, str], data: SeriesMetadata,
     row_data = [
         data.patient_id,
         pseudoname,
-        f"{pseudoname}_{data.contrast_phase}.nii.gz",
+        f"{data.contrast_phase}.nii.gz",
         data.study_instance_uid,
         data.study_date,
         data.series_description,
@@ -248,10 +251,10 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
     if additional_dicom_tags:
         df_cols.extend(additional_dicom_tags)
     
-    patient_tags_df_path = Path(output_dir, "sarco_patients_dicom_tags.csv")
-    if not patient_tags_df_path.exists():
-        patient_tags_df = pd.DataFrame([], columns=df_cols)
-        patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
+    # patient_tags_df_path = Path(output_dir, "sarco_patients_dicom_tags.csv")
+    # if not patient_tags_df_path.exists():
+    #     patient_tags_df = pd.DataFrame([], columns=df_cols)
+    #     patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
     
     i = 1
     for root, _, files in input_dir.walk():
@@ -260,8 +263,11 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         
         files_by_series_uid, dose_report_path = sort_files_by_series_uid(root, files)
         
+        dose_per_event = extract_dlp_from_dose_report(dose_report_path)
+        
         series_to_segment = filter_series_to_segment(files_by_series_uid,  
                                                      additional_dicom_tags=additional_dicom_tags)
+        
         print(f"found {len(series_to_segment)} valid series for segmentation")
         
         pseudoname = f"sarco_{i}"
@@ -270,6 +276,12 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         os.makedirs(output_case_dir, exist_ok=True)
         
         for data in series_to_segment.values():
+            dose = dose_per_event.get(data.irradiation_event_uid)
+            data.dose_length_product = dose.get('dlp', None)
+            data.mean_ctdi_vol = dose.get('mean_ctdi_vol', None)
+            
+            data.print_data()
+            
             dicom_datasets = [pydicom.dcmread(file) for file in data.filepaths]
             dicom_datasets = sort_dicoms(dicom_datasets)
             
@@ -286,38 +298,44 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
                 print(err)
             
             
-def get_sr_tag(
-    dicom_dataset: pydicom.FileDataset,
-    tag_name: str
-    ):
+def extract_dlp_from_dose_report(dose_report: str) -> dict[str, float]:
+    """Parse RDSR and return mapping of IrradiationEventUID -> DLP value."""
+    ds = pydicom.dcmread(dose_report)
+    event_to_dose = {}
 
-    requested_value = None
-    content_seq = dicom_dataset.get("ContentSequence", [])
-    if not content_seq:
-        print(f"SR FileDataset has no ContentSequence, returning {requested_value}")
-        return requested_value
-    
-    for seq in content_seq:
-        if seq.get("ValueType", None) != "CONTAINER":
-            continue
-        container_seq = seq.get("ContentSequence", [])
-        if not container_seq:
-            continue
-            
-        for seq in container_seq:
-            value_type = seq.ValueType
-            concept_seq = seq.ConceptNameCodeSequence[0]
-            code_meaning = concept_seq.CodeMeaning
-            match value_type:
-                case "NUM":
-                    measured_seq = seq.MeasuredValueSequence[0]
-                    requested_value = float(measured_seq.NumericValue)
-                    value_unit = measured_seq.MeasurementUnitsCodeSequence[0].CodeValue
-                    
-                    if code_meaning.lower() == tag_name.lower():
-                        return code_meaning, requested_value, value_unit
-                case "TEXT":
-                    pass
+    if ds.SOPClassUID.name != "Enhanced SR Storage" and ds.Modality != "SR":
+        raise ValueError("Provided dose report is not a Structured Report (RDSR).")
+
+    def walk_content(seq, current_event=None):
+        values = {}
+        for item in seq:
+            vr = item.ValueType
+
+            # Check for Irradiation Event UID
+            if hasattr(item, "ConceptNameCodeSequence"):
+                code_meaning = item.ConceptNameCodeSequence[0].CodeMeaning
+                if code_meaning == "Irradiation Event UID" and hasattr(item, "UID"):
+                    current_event = item.UID
+                    if current_event not in event_to_dose:
+                        event_to_dose[current_event] = {'dlp': None, 'mean_ctdi_vol': None}
+
+            # Find DLP value linked to the current event
+            if vr == "NUM" and hasattr(item, "MeasuredValueSequence"):
+                code_meaning = item.ConceptNameCodeSequence[0].CodeMeaning
+                val = float(item.MeasuredValueSequence[0].NumericValue)
+                
+                if current_event:
+                    if code_meaning in ["DLP"]:
+                        event_to_dose[current_event]['dlp'] = val                    
+                    elif code_meaning in ["Mean CTDIvol"]:
+                        event_to_dose[current_event]['mean_ctdi_vol'] = val                    
+                
+            # Recursive walk
+            if hasattr(item, "ContentSequence"):
+                walk_content(item.ContentSequence, current_event)
+
+    walk_content(ds.ContentSequence)
+    return event_to_dose
             
             
             
