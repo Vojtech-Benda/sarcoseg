@@ -12,7 +12,7 @@ from nnunet.inference.predict import predict_cases
 
 from src import segmentation
 
-TARGET_VERTEBRAE_MAP = {
+DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_L1": 31, 
     "vertebrae_L2": 30, 
     "vertebrae_L3": 29, 
@@ -22,14 +22,14 @@ TARGET_VERTEBRAE_MAP = {
     }
 
 
-TARGET_TISSUES_MAP = {
+DEFAULT_TISSUE_CLASSES = {
     "sat": 1, 
     "vat": 2, 
     "imat": 3,
     "muscle": 4 
 }
 
-TISSUE_LABEL_INDEX = list(TARGET_TISSUES_MAP.keys())
+TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
@@ -99,7 +99,7 @@ def segment_spine(
 
     Args:
         input_nifti_path (Union[str, Path]): path to nifti file
-        output_dir (Union[str, Path], optional): directory to store segmentation mask. Defaults to None.
+        output_dir (Union[str, Path], optional): directory to store segmentation mask. Defaults to "./".
 
     Returns:
         spine_results (dict): spine segmentation results
@@ -119,7 +119,7 @@ def segment_spine(
     print(f"\nsegmenting vertebrae for {input_nifti_path.name}")
     
     if not vert_classes:
-        vert_classes = list(TARGET_VERTEBRAE_MAP.keys())
+        vert_classes = list(DEFAULT_VERTEBRA_CLASSES.keys())
         print(f"vert_classes is None, using default: {vert_classes}")
     
     start = perf_counter()
@@ -268,7 +268,7 @@ def extract_slices(
             spine_mask = nib.load(spine_mask)
     
     start = perf_counter()
-    body_centroids_z = get_vertebrae_body_centroids(spine_mask, TARGET_VERTEBRAE_MAP["vertebrae_L3"])
+    body_centroids_z = get_vertebrae_body_centroids(spine_mask, DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"])
 
     ct_volume = nib.load(ct_volume_path)
     ct_volume = nib.funcs.as_closest_canonical(ct_volume)
@@ -327,8 +327,8 @@ def postprocess_tissue_masks(
     mask_arr = mask.get_fdata().astype(np.uint8)
     volume_arr = volume.get_fdata()
     
-    out = np.zeros((*mask_arr.shape, len(TARGET_TISSUES_MAP)), dtype=bool)
-    for i, label in enumerate(TARGET_TISSUES_MAP.values()):
+    out = np.zeros((*mask_arr.shape, len(DEFAULT_TISSUE_CLASSES)), dtype=bool)
+    for i, label in enumerate(DEFAULT_TISSUE_CLASSES.values()):
         
         # for SAT (label == 1) use 200, for other tissues use 20
         min_hole_size = 200 if label == 1 else 20
