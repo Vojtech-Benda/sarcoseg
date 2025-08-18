@@ -12,11 +12,10 @@ from pydicom import datadict
 import pandas as pd
 from dicom2nifti.common import sort_dicoms, validate_orientation
 from dicom2nifti.convert_dicom import dicom_array_to_nifti
-import time
 
 
 SERIES_DESC_PATTERN = re.compile(r'|'.join(
-    ("protocol", "topogram", "scout", "patient", "dose", "report")
+    ("protocol", "topogram", "scout", "patient")
     ), re.IGNORECASE)
 CONTRAST_PHASES = re.compile(r'|'.join(
     ("arterial", "nephro", "venous")
@@ -35,7 +34,9 @@ class SeriesMetadata:
     slice_thickness: Union[float, None] = None
     has_contrast: bool = False
     contrast_phase: str = None
-    kilo_voltage_peak: Union[float, None] = None
+    kilo_voltage_peak: Union[float, None] = None,
+    irradiation_event_uid: str = None
+    dose_length_product: Union[float, None] = None
     
     additional_tags = {}
     
@@ -55,7 +56,19 @@ class SeriesMetadata:
             print(f"additional DICOM tags:\n{self.additional_tags}\n")
 
 
-def sort_files_by_series_uid(root_dir: Path, filepaths: list[str]) -> dict[str, list[str]]:
+def sort_files_by_series_uid(
+    root_dir: Path, filepaths: list[str]) -> dict[str, list[str]]:
+    """
+    Sorts filepaths by DICOM tag SeriesInstanceUID. 
+    Also returns fullpath of Dose report series if found.
+
+    Args:
+        root_dir (Path): Root directory for filepaths
+        filepaths (list[str]): list of filepaths
+
+    Returns:
+        dict[str, list[str]]: map of SeriesInstanceUID and sorted lists of filepaths
+    """
     files_by_uid: dict[str, list[str]] = {}
     
     first_file = pydicom.dcmread(Path(root_dir, filepaths[0]), stop_before_pixels=True)
@@ -71,12 +84,19 @@ def sort_files_by_series_uid(root_dir: Path, filepaths: list[str]) -> dict[str, 
         else:
             files_by_uid[series_uid] = [dicom_path]
     
+        dose_report_path = None
+        if "dose report" in dataset.SeriesDescription.lower():
+            dose_report_path = dicom_path
+            print("found dose report file")
+    
     print(f"\nid '{patient_id}' has {len(filepaths)} files across {len(files_by_uid.keys())} series")
-    return files_by_uid
+    return files_by_uid, dose_report_path
 
 
-def filter_series_to_segment(all_series: dict, 
-                             additional_dicom_tags: Optional[list[str]] = None) -> Union[list[SeriesMetadata], None]:
+def filter_series_to_segment(
+    all_series: dict, 
+    additional_dicom_tags: Optional[list[str]] = None
+    ) -> Union[list[SeriesMetadata], None]:
     """
     Filter series by checking DICOM tags. Finds the native CT series with the lowest slice thickness and highest number of slices.
     Also finds the contrast phase CT series with the lowest slice thickness and highest number of slices per each contrast phase found.
@@ -94,12 +114,10 @@ def filter_series_to_segment(all_series: dict,
         'nephro': [],
         'venous': []
         }
-    # native_series = []
     
     for _, filepaths in all_series.items():
         
         # read only the first file to filter series
-        # first_filepath = Path(root_dir, filepaths[0])
         first_filepath = filepaths[0]
         if not first_filepath.exists():
             raise FileNotFoundError(2, "file not found", first_filepath)
@@ -127,11 +145,10 @@ def filter_series_to_segment(all_series: dict,
             num_of_files=len(filepaths),
             slice_thickness=slice_thickness,
             has_contrast=True if contrast_applied else False,
-            kilo_voltage_peak=int(dataset.get("KVP", None))
+            kilo_voltage_peak=int(dataset.get("KVP", None)),
+            irradiation_event_uid=dataset.IrradiationEventUID
             )
         
-        # contrast_phase = series_desc.split(" ")[0].lower()
-        # contrast_phase = series_desc
         contrast_match = CONTRAST_PHASES.search(series_desc)
         if contrast_match:
             series_data.contrast_phase = contrast_match.group().lower()
@@ -144,25 +161,16 @@ def filter_series_to_segment(all_series: dict,
                 tag_value = dataset.get(tag, None)
                 series_data.additional_tags[tag] = tag_value
         
-        # separate into contrast and no contrast
+        # maps series data by contrast phase - "native", "arterial", ...
         series_by_contrast[series_data.contrast_phase].append(series_data)
-        # if series_data.has_contrast and series_data.contrast_phase != "native":
-        #     contrast_series[series_data.contrast_phase].append(series_data)
-        # else:
-        #     native_series.append(series_data)
-            
-    # select the series with lowest slice thickness AND highest number of slices
-    # selected_native_series = min(native_series, key=lambda v: (v.slice_thickness, -v.num_of_files))
     
-    # same thing but for each contrast phase key - {'arterial': [...], 'nephro': [...], 'venous': [...]}
-    # skips empty lists
+    # selects series with lowest slice thickness and highest number of files
+    # selection per contrast phase, skips empty lists
     selected_series_by_contrast_phase = {
         phase: min(series_list, key=lambda v: (v.slice_thickness, -v.num_of_files))
         for phase, series_list in series_by_contrast.items() if series_list
     }
 
-    # return as a single list of selected series to segment
-    # return [selected_native_series] + list(selected_series_by_contrast_phase.values())
     return selected_series_by_contrast_phase
     
 
@@ -221,8 +229,6 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
             print(f"wrong dicom tag name(s): {', '.join(map(str, invalid_tags))}")
             sys.exit(-1)
         
-    anonymize = kwargs.get("anonymize", False)
-        
     input_dir = Path(input_dir)
 
     # prepare table to output dicom tags
@@ -252,16 +258,11 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         if not files or "DICOMDIR" in files:
             continue
         
-        files_by_series_uid = sort_files_by_series_uid(root, files)
+        files_by_series_uid, dose_report_path = sort_files_by_series_uid(root, files)
         
         series_to_segment = filter_series_to_segment(files_by_series_uid,  
                                                      additional_dicom_tags=additional_dicom_tags)
         print(f"found {len(series_to_segment)} valid series for segmentation")
-        
-        # get case pseudoname
-        # pseudoname = write_dicom_tags(patient_tags_df_path, 
-        #                                 data, 
-        #                                 additional_dicom_tags)
         
         pseudoname = f"sarco_{i}"
         i += 1
@@ -273,18 +274,52 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
             dicom_datasets = sort_dicoms(dicom_datasets)
             
             validate_orientation(dicom_datasets)
-            
-            nifti_filename = f"{pseudoname}_{data.contrast_phase}"
-            
-            output_filepath = output_case_dir.joinpath(f"{nifti_filename}.nii.gz")
+                        
+            output_filepath = output_case_dir.joinpath(f"{data.contrast_phase}.nii.gz")
             
             try:
                 dicom_array_to_nifti(dicom_list=dicom_datasets,
                                     output_file=output_filepath,
                                     reorient_nifti=True)
-                print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti as '{output_filepath.name}'")
+                print(f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti '{output_filepath.name}'")
             except RuntimeError as err:
                 print(err)
+            
+            
+def get_sr_tag(
+    dicom_dataset: pydicom.FileDataset,
+    tag_name: str
+    ):
+
+    requested_value = None
+    content_seq = dicom_dataset.get("ContentSequence", [])
+    if not content_seq:
+        print(f"SR FileDataset has no ContentSequence, returning {requested_value}")
+        return requested_value
+    
+    for seq in content_seq:
+        if seq.get("ValueType", None) != "CONTAINER":
+            continue
+        container_seq = seq.get("ContentSequence", [])
+        if not container_seq:
+            continue
+            
+        for seq in container_seq:
+            value_type = seq.ValueType
+            concept_seq = seq.ConceptNameCodeSequence[0]
+            code_meaning = concept_seq.CodeMeaning
+            match value_type:
+                case "NUM":
+                    measured_seq = seq.MeasuredValueSequence[0]
+                    requested_value = float(measured_seq.NumericValue)
+                    value_unit = measured_seq.MeasurementUnitsCodeSequence[0].CodeValue
+                    
+                    if code_meaning.lower() == tag_name.lower():
+                        return code_meaning, requested_value, value_unit
+                case "TEXT":
+                    pass
+            
+            
             
 if __name__ == "__main__":
     if len(sys.argv) < 1:
