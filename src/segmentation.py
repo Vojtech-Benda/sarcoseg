@@ -91,7 +91,8 @@ def segment_ct(
 def segment_spine(
     input_nifti_path: Union[str, Path], 
     output_dir: Union[str, Path] = None,
-    vert_classes: list = None
+    vert_classes: list = None,
+    overwrite_output: bool = False
     ) -> dict:
     """
     Segment spine vertebrae.
@@ -108,7 +109,7 @@ def segment_spine(
         f"{str(input_nifti_path.name).removesuffix('.nii.gz')}_spine_mask.nii.gz"
         )
     
-    if spine_mask_path.exists():
+    if spine_mask_path.exists() and not overwrite_output:
         print(f"file '{spine_mask_path}' exists, skipping spine segmentation")
         return {'spine_mask_path': spine_mask_path}
     
