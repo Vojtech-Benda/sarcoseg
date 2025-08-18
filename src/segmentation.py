@@ -105,6 +105,9 @@ def segment_spine(
         spine_results (dict): spine segmentation results
     """    
     
+    if not isinstance(output_dir, Path):
+        output_dir = Path(output_dir)
+    
     spine_mask_path = output_dir.joinpath(
         f"{str(input_nifti_path.name).removesuffix('.nii.gz')}_spine_mask.nii.gz"
         )
