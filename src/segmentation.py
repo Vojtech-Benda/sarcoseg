@@ -90,7 +90,8 @@ def segment_ct(
 
 def segment_spine(
     input_nifti_path: Union[str, Path], 
-    output_dir: Union[str, Path] = None
+    output_dir: Union[str, Path] = None,
+    vert_classes: list = None
     ) -> dict:
     """
     Segment spine vertebrae.
@@ -113,6 +114,10 @@ def segment_spine(
     
     print(f"\nsegmenting vertebrae for {input_nifti_path.name}")
     
+    if not vert_classes:
+        vert_classes = list(TARGET_VERTEBRAE_MAP.keys())
+        print(f"vert_classes is None, using default: {vert_classes}")
+    
     start = perf_counter()
     spine_mask: nib.nifti1.Nifti1Image = totalsegmentator(
         input_nifti_path,
@@ -121,7 +126,7 @@ def segment_spine(
         ml=True,
         quiet=True,
         task="total",
-        roi_subset=list(TARGET_VERTEBRAE_MAP.keys()),
+        roi_subset=vert_classes,
         device="gpu")
     
     duration = perf_counter() - start
