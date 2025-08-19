@@ -263,7 +263,7 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
         
         files_by_series_uid, dose_report_path = sort_files_by_series_uid(root, files)
         
-        dose_per_event = extract_dlp_from_dose_report(dose_report_path)
+        dose_per_event = extract_dose_values(dose_report_path)
         
         series_to_segment = filter_series_to_segment(files_by_series_uid,  
                                                      additional_dicom_tags=additional_dicom_tags)
@@ -298,20 +298,22 @@ def preprocess_dicom(input_dir: Union[str, Path], output_dir: Union[str, Path] =
                 print(err)
             
             
-def extract_dlp_from_dose_report(dose_report: str) -> dict[str, float]:
-    """Parse RDSR and return mapping of IrradiationEventUID -> DLP value."""
+def extract_dose_values(dose_report: str) -> dict[str, float]:
+    """
+    Map IrradiationEventUID to dose values 
+    
+    """
     ds = pydicom.dcmread(dose_report)
     event_to_dose = {}
 
-    if ds.SOPClassUID.name != "Enhanced SR Storage" and ds.Modality != "SR":
-        raise ValueError("Provided dose report is not a Structured Report (RDSR).")
+    if ds.Modality != "SR":
+        raise ValueError("file is not dose report")
 
     def walk_content(seq, current_event=None):
-        values = {}
         for item in seq:
             vr = item.ValueType
-
-            # Check for Irradiation Event UID
+            
+            # get irradiation event uid 
             if hasattr(item, "ConceptNameCodeSequence"):
                 code_meaning = item.ConceptNameCodeSequence[0].CodeMeaning
                 if code_meaning == "Irradiation Event UID" and hasattr(item, "UID"):
@@ -319,7 +321,7 @@ def extract_dlp_from_dose_report(dose_report: str) -> dict[str, float]:
                     if current_event not in event_to_dose:
                         event_to_dose[current_event] = {'dlp': None, 'mean_ctdi_vol': None}
 
-            # Find DLP value linked to the current event
+            # find dose values
             if vr == "NUM" and hasattr(item, "MeasuredValueSequence"):
                 code_meaning = item.ConceptNameCodeSequence[0].CodeMeaning
                 val = float(item.MeasuredValueSequence[0].NumericValue)
@@ -330,7 +332,7 @@ def extract_dlp_from_dose_report(dose_report: str) -> dict[str, float]:
                     elif code_meaning in ["Mean CTDIvol"]:
                         event_to_dose[current_event]['mean_ctdi_vol'] = val                    
                 
-            # Recursive walk
+            # recursively iterate content sequences
             if hasattr(item, "ContentSequence"):
                 walk_content(item.ContentSequence, current_event)
 
