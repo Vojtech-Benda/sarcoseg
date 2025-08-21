@@ -11,6 +11,8 @@ import skimage as sk
 from nnunet.inference.predict import predict_cases
 
 from src import segmentation
+from src import visualization
+
 
 DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_L1": 31,
@@ -34,12 +36,15 @@ def segment_ct(input_dir: str, output_dir: str, additional_metrics: list, **kwar
     print(f"found {len(case_dirs)} cases")
 
     for case_dir in case_dirs:
-        case_output_dir = Path(output_dir, case_dir.name)
-        case_output_dir.mkdir(exist_ok=True)
+        case_nifti_dir = Path(output_dir, case_dir.name, "nifti")
+        case_images_dir = Path(output_dir, case_dir.name, "images")
+        case_nifti_dir.mkdir(exist_ok=True, parents=True)
+        case_images_dir.mkdir(exist_ok=True, parents=True)
 
         ct_volume_paths = list(case_dir.glob("*.nii.gz"))
+        print("\n" + "-" * 25)
         print(
-            f"found {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
+            f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
         )
 
         slices_num = kwargs.get("slices_num", 0)
@@ -48,7 +53,7 @@ def segment_ct(input_dir: str, output_dir: str, additional_metrics: list, **kwar
         for ct_volume_path in ct_volume_paths:
             spine_results = segmentation.segment_spine(
                 ct_volume_path,
-                case_output_dir,
+                case_nifti_dir,
             )
 
             spine_mask = (
@@ -58,26 +63,40 @@ def segment_ct(input_dir: str, output_dir: str, additional_metrics: list, **kwar
             )
 
             slice_results = segmentation.extract_slices(
-                ct_volume_path, case_output_dir, spine_mask, slices_num
+                ct_volume_path, case_nifti_dir, spine_mask, slices_num
             )
 
             tissue_results = segmentation.segment_tissues(
-                slice_results["sliced_volume_path"], case_output_dir
+                slice_results["sliced_volume_path"], case_nifti_dir
             )
 
             postproc_results = segmentation.postprocess_tissue_masks(
                 tissue_results["mask"],
                 tissue_results["volume"],
-                # tissue_results['mask_affine'],
                 tissue_results["mask_filepath"],
             )
 
             metric_results = segmentation.compute_metrics(
-                postproc_results["processed_masks"],
+                postproc_results["processed_mask"],
                 metrics=additional_metrics,
-                spacing=tissue_results.get("spacing", None),
+                spacing=tissue_results["spacing"],
             )
-            print(metric_results["area"])
+
+            phase = str(ct_volume_path.name).removesuffix(".nii.gz")
+            visualization.overlay_spine_mask(
+                ct_volume_path,
+                spine_results["spine_mask_path"],
+                slice_results["vert_centroid"],
+                output_dir=case_images_dir,
+                phase=phase,
+            )
+
+            visualization.overlay_tissue_mask(
+                slice_results["sliced_volume_path"],
+                tissue_results["mask_filepath"],
+                output_dir=case_images_dir,
+                phase=phase,
+            )
 
 
 def segment_spine(
@@ -145,10 +164,9 @@ def segment_tissues(
         case_output_dir = Path(case_output_dir)
 
     print(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
-    
-    # split results into ["sarco", n, phase, "l3", "slices"]
-    filename_parts = tissue_volume_path.name.split("_")[:4]
-    output_filename = "_".join(filename_parts) + "_tissue_mask.nii.gz"
+
+    # split results into [phase, "slices"]
+    output_filename = tissue_volume_path.name.removesuffix(".nii.gz") + "_mask.nii.gz"
 
     output_filepath = Path(case_output_dir, output_filename)
 
@@ -188,7 +206,9 @@ def segment_tissues(
     }
 
 
-def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image, vert_labels: int) -> int:
+def get_vertebrae_body_centroids(
+    mask: nib.nifti1.Nifti1Image, vert_labels: int
+) -> npt.NDArray:
     """
     Get vertebrae's body centroid coordinates in pixel space.
 
@@ -197,8 +217,8 @@ def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image, vert_labels: int)
         vert_labels (int): vertebrae mask labels
 
     Returns:
-        body_centroids_z (int):
-        index of vertebrae body centroid along Z (superior) direction in voxel space
+        body_centroid (npt.NDArray):
+        vertebrae body centroid in voxel space
     """
 
     mask_arr = mask.get_fdata().astype(np.uint8)
@@ -244,7 +264,7 @@ def get_vertebrae_body_centroids(mask: nib.nifti1.Nifti1Image, vert_labels: int)
         np.argmax(comp_centroids[:, 0] > vert_label_centroid[1])
     ]
 
-    return vert_body_centroid[-1]
+    return vert_body_centroid, vert_label_centroid
 
 
 def extract_slices(
@@ -252,23 +272,25 @@ def extract_slices(
     output_dir: Union[Path, str],
     spine_mask: Union[nib.nifti1.Nifti1Image, Path, str],
     slices_num: int = 0,
-) -> None:
+) -> dict:
     if any([isinstance(spine_mask, c) for c in (Path, str)]):
         if spine_mask.exists():
             spine_mask = nib.load(spine_mask)
 
     start = perf_counter()
-    body_centroids_z = get_vertebrae_body_centroids(
+    body_centroid, vert_centroid = get_vertebrae_body_centroids(
         spine_mask, DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"]
     )
 
     ct_volume = nib.load(ct_volume_path)
     ct_volume = nib.funcs.as_closest_canonical(ct_volume)
 
-    if slices_num > 0:
+    # requires slices_num=2 at minimum
+    if slices_num > 1:
         slices_range = [
-            body_centroids_z - (slices_num // 2),
-            body_centroids_z + (slices_num // 2) + 1,
+            # extract slices in Z direction (superior-inferior)
+            body_centroid[-1] - (slices_num // 2),
+            body_centroid[-1] + (slices_num // 2),
         ]
         if slices_range[0] < 0:
             slices_range[0] = 0
@@ -283,20 +305,20 @@ def extract_slices(
                 f"upper index {slices_range[1]} is outside extent for Z dimension {z_size}, setting to {z_size}"
             )
     else:
-        slices_range = [body_centroids_z, body_centroids_z]
+        slices_range = [body_centroid[-1], body_centroid[-1]]
 
-    slices_range[1] += 1  # nib slicer requires slice indexes [i:i + 1]
+    # slices_range[1] += 1  # nib slicer requires slice indexes [i:i + 1]
     print(
-        f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}, middle slice at index {body_centroids_z}"
+        f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}, middle slice at index {body_centroid}"
     )
 
     sliced_ct_volume = ct_volume.slicer[
-        ..., slices_range[0] : slices_range[1]
-    ]  # nib slicer requires range (i, i + 1)
+        ..., slices_range[0] : slices_range[1] + 1
+    ]  # nib slicer requires range [..., i:i + 1]
     sliced_ct_volume = nib.funcs.as_closest_canonical(sliced_ct_volume)
 
     name = ct_volume_path.name.removesuffix(".nii.gz")
-    output_filepath = Path(output_dir, f"{name}_l3_slices.nii.gz")
+    output_filepath = Path(output_dir, f"{name}_tissue.nii.gz")
     if output_filepath.exists():
         print(f"file '{output_filepath}' exists, overwriting")
 
@@ -308,13 +330,17 @@ def extract_slices(
     duration = perf_counter() - start
     print(f"slice extraction finished in {duration} seconds")
 
-    return {"sliced_volume_path": output_filepath, "duration": duration}
+    return {
+        "sliced_volume_path": output_filepath,
+        "duration": duration,
+        "body_centroid": body_centroid,
+        "vert_centroid": vert_centroid,
+    }
 
 
 def postprocess_tissue_masks(
     mask: nib.Nifti1Image,
     volume: nib.Nifti1Image,
-    affine: npt.NDArray = None,
     output_nifti_filepath: Union[Path, str, None] = None,
 ):
     """
@@ -346,33 +372,33 @@ def postprocess_tissue_masks(
             out[imat_hu_filt, 2] = 1
             out[imat_hu_filt, 3] = 0
 
-    # convert processed labels into single slice array H x W x L -> H x W
-    out_nifti = np.zeros((*out.shape[:-1], 1), dtype=np.uint8)
+    # squeeze processed labels of shape H x W x D x L -> H x W x D
+    out_nifti = np.zeros(out.shape[:-1], dtype=np.uint8)
+
     for i in range(out.shape[-1]):
-        out_nifti[out[..., i] == 1, 0] = i + 1
-    out_nifti = nib.as_closest_canonical(nib.Nifti1Image(out_nifti, affine))
+        out_nifti[out[..., i] == 1] = i + 1
+    out_nifti = nib.as_closest_canonical(nib.Nifti1Image(out_nifti, mask.affine))
     nib.save(out_nifti, output_nifti_filepath)  # overwrite segmented image
 
     duration = perf_counter() - start
     print(f"tissue postprocessing finished in {duration:.2f} second")
-    return {"processed_masks": out, "duration": duration}
+    return {"processed_mask": out, "duration": duration}
 
 
 def compute_metrics(tissue_mask_array: npt.NDArray, metrics: list, spacing=None):
     # if None use 1mm spacing in all directions
     if spacing is None:
-        if len(tissue_mask_array.shape) == 2:
-            spacing = (1.0, 1.0)
-        elif len(tissue_mask_array.shape) == 3:
-            spacing = (1.0, 1.0, 1.0)
-        else:
-            raise ValueError(
-                f"array of shape {tissue_mask_array.shape} is not supported, needs to be (H x W) or (H x W x D)"
-            )
+        spacing = (1.0, 1.0, 1.0)
 
-    if len(spacing) == 2:
+    if len(tissue_mask_array.shape[:-1]) != len(spacing):
+        raise ValueError(
+            f"array shape {tissue_mask_array.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
+        )
+
+    mask_shape = tissue_mask_array.shape[:-1]  # get image size only
+    if mask_shape[-1] == 1:
         pixel_size = np.prod(spacing[:2]) / 100.0  # pixel size is in cm^2
-    elif len(spacing) == 3:
+    elif mask_shape[-1] > 1:
         pixel_size = np.prod(spacing) / 10000.0  # pixel size is in cm^3
 
     metric_results = {}
