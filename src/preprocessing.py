@@ -1,15 +1,14 @@
 import sys
 import re
-import os
 
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union
 from dataclasses import dataclass
 
-# image processing packages
 import pydicom
-from pydicom import datadict
 import pandas as pd
+from statistics import mean
+from time import perf_counter
 from dicom2nifti.common import sort_dicoms, validate_orientation
 from dicom2nifti.convert_dicom import dicom_array_to_nifti
 
@@ -62,10 +61,10 @@ class SeriesMetadata:
 class SeriesData:
     series_inst_uid: str = None
     series_descriptions: str = None
-    filepaths: list[str | Path] = None
-    num_of_files: int = None
+    filepaths: list[Path] = None
+    num_of_filepaths: int = None
     slice_thickness: float = None
-    has_contrast: bool = False
+    has_contrast: str = None
     contrast_phase: str = None
     kilo_voltage_peak: float = None
     mean_tube_current: float = None
@@ -77,55 +76,162 @@ class SeriesData:
 @dataclass
 class StudyData:
     patient_id: str = None
+    pseudoname: str = None
     study_inst_uid: str = None
     study_date: str = None
-    series_data: list[SeriesData] = None
+    series_dict: dict[str, SeriesData] = None
     number_of_ct_scans: int = None
 
 
+def preprocess_dicom(
+    input_dir: Union[str, Path], output_dir: Union[str, Path] = "./inputs"
+):
+    print("preprocessing dicom files")
+
+    # check if all additional tags are valid
+
+    if not isinstance(input_dir, Path):
+        input_dir = Path(input_dir)
+
+    if not isinstance(output_dir, Path):
+        output_dir = Path(output_dir)
+
+    # prepare table to output dicom tags
+    # df_cols = [
+    #     "PatientID",
+    #     "Pseudoname",
+    #     "StudyInstanceUID",
+    #     "StudyDate",
+    #     "SeriesInstanceUID",
+    #     "SeriesDescription",
+    #     "SliceThickness",
+    #     "HasContrast",
+    #     "ContrastPhase",
+    #     "KiloVoltagePeak",
+    # ]
+
+    # patient_tags_df_path = Path(output_dir, "sarco_patients_dicom_tags.csv")
+    # if not patient_tags_df_path.exists():
+    #     patient_tags_df = pd.DataFrame([], columns=df_cols)
+    #     patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
+
+    i = 1
+    for dicom_dir in input_dir.glob("*/"):
+        dur = perf_counter()
+        dicom_files = find_dicoms(dicom_dir)
+
+        study_data, files_by_series_uid, dose_report_path = sort_files_by_series_uid(
+            dicom_files
+        )
+
+        dose_per_event = extract_dose_values(dose_report_path)
+
+        series_to_segment = filter_series_to_segment(
+            files_by_series_uid, dose_report=dose_per_event
+        )
+
+        print(f"found {len(series_to_segment)} valid series for segmentation")
+        study_data.series_dict = series_to_segment
+
+        pseudoname = f"sarco_{i}"
+        i += 1
+        output_case_dir = Path(output_dir, pseudoname)
+        output_case_dir.mkdir(exist_ok=True, parents=True)
+
+        for data in series_to_segment.values():
+            # dose = dose_per_event.get(data.irradiation_event_uid)
+            # data.dose_length_product = dose.get("dlp", None)
+            # data.mean_ctdi_vol = dose.get("mean_ctdi_vol", None)
+
+            print(
+                f"saving id `{study_data.patient_id}` contrast `{data.contrast_phase}`"
+            )
+
+            dicom_datasets = [pydicom.dcmread(file) for file in data.filepaths]
+
+            output_filepath = output_case_dir.joinpath(f"{data.contrast_phase}.nii.gz")
+
+            try:
+                dicom_array_to_nifti(
+                    dicom_list=dicom_datasets,
+                    output_file=output_filepath,
+                    reorient_nifti=True,
+                )
+                print(
+                    (
+                        f"id `{study_data.patient_id}` (pseudoname `{pseudoname}`), "
+                        f"contrast `{data.contrast_phase}`, "
+                        f"{data.num_of_filepaths} DICOM files written as nifti `{output_filepath.name}`"
+                    )
+                )
+                print(f"finished in {perf_counter() - dur}")
+                print("\n" + "-" * 25)
+            except RuntimeError as err:
+                print(err)
+
+
 def sort_files_by_series_uid(
-    root_dir: Path, filepaths: list[str]
-) -> dict[str, list[str]]:
+    dicom_files: list[Path],
+) -> tuple[StudyData, dict[str, list[Path]], Path]:
     """
     Sorts filepaths by DICOM tag SeriesInstanceUID.
     Also returns fullpath of Dose report series if found.
 
     Args:
-        root_dir (Path): Root directory for filepaths
-        filepaths (list[str]): list of filepaths
+        dicom_files (list[Path]): List of dicom files, excluding DICOMDIR file.
 
     Returns:
-        dict[str, list[str]]: map of SeriesInstanceUID and sorted lists of filepaths
+        tuple:
+            StudyData: Object containing basic study metadata.
+            dict[str, list[Path]]: Dictionary mapping each SeriesInstanceUID to a list of filepaths.
+            Path: Path to Dose Report series file, if found, otherwise None.
     """
+
     files_by_uid: dict[str, list[str]] = {}
 
-    first_file = pydicom.dcmread(Path(root_dir, filepaths[0]), stop_before_pixels=True)
-    patient_id = first_file.PatientID
+    ds = pydicom.dcmread(
+        dicom_files[0],
+        stop_before_pixels=True,
+        specific_tags=["PatientID", "StudyDate", "StudyInstanceUID"],
+    )
 
-    dose_report_path = None
-    for path in filepaths:
-        dicom_path = Path(root_dir, path)
-        dataset = pydicom.dcmread(dicom_path, stop_before_pixels=True)
-        series_uid = dataset.SeriesInstanceUID
+    study_data = StudyData(
+        patient_id=ds.PatientID,
+        study_inst_uid=ds.StudyInstanceUID,
+        study_date=ds.StudyDate,
+    )
+
+    dose_report_file = None
+    for file in dicom_files:
+        ds = pydicom.dcmread(
+            file,
+            stop_before_pixels=True,
+            specific_tags=[
+                "SeriesInstanceUID",
+                "SeriesDescription",
+                "Modality",
+            ],
+        )
+        series_uid = ds.SeriesInstanceUID
 
         if series_uid in files_by_uid:
-            files_by_uid[series_uid].append(dicom_path)
+            files_by_uid[series_uid].append(file)
         else:
-            files_by_uid[series_uid] = [dicom_path]
+            files_by_uid[series_uid] = [file]
 
-        if "dose report" in dataset.SeriesDescription.lower():
-            dose_report_path = dicom_path
-            print(f"found dose report file at {dose_report_path}")
+        if "dose report" in ds.SeriesDescription.lower() or ds.Modality == "SR":
+            dose_report_file = file
 
     print(
-        f"\nid '{patient_id}' has {len(filepaths)} files across {len(files_by_uid.keys())} series"
+        f"\nid '{study_data.patient_id}' has {len(dicom_files)} files across {len(files_by_uid.keys())} series"
     )
-    return files_by_uid, dose_report_path
+    return study_data, files_by_uid, dose_report_file
 
 
 def filter_series_to_segment(
-    all_series: dict, additional_dicom_tags: Optional[list[str]] = None
-) -> dict[str, SeriesMetadata]:
+    all_series: dict,
+    dose_report: dict,
+) -> dict[str, SeriesData]:
     """
     Filter series by checking DICOM tags. Finds the native CT series with the lowest slice thickness and highest number of slices.
     Also finds the contrast phase CT series with the lowest slice thickness and highest number of slices per each contrast phase found.
@@ -137,19 +243,17 @@ def filter_series_to_segment(
         list: list consisting of SeriesMetadata dataclass for native CT and each contract phase CT.
     """
 
-    series_by_contrast: dict[str, list[SeriesMetadata]] = {
-        "native": [],
-        "arterial": [],
-        "nephro": [],
-        "venous": [],
+    series_by_contrast: dict[str, list[SeriesData]] = {
+        # "native": [],
+        # "arterial": [],
+        # "nephro": [],
+        # "venous": [],
     }
 
-    for _, filepaths in all_series.items():
+    for series_uid, filepaths in all_series.items():
         # read only the first file to filter series
-        first_filepath = filepaths[0]
-        if not first_filepath.exists():
-            raise FileNotFoundError(2, "file not found", first_filepath)
-        dataset = pydicom.dcmread(first_filepath, stop_before_pixels=True)
+        # first_filepath = filepaths[0]
+        dataset = pydicom.dcmread(filepaths[0], stop_before_pixels=True)
 
         # filter by words in SeriesDescription
         series_desc: str = dataset.SeriesDescription
@@ -166,18 +270,13 @@ def filter_series_to_segment(
 
         contrast_applied = dataset.get("ContrastBolusAgent", None)
 
-        series_data = SeriesMetadata(
-            patient_id=dataset.PatientID,
-            study_instance_uid=dataset.StudyInstanceUID,
-            study_date=dataset.StudyDate,
-            series_instance_uid=dataset.SeriesInstanceUID,
-            series_description=dataset.SeriesDescription,
+        series_data = SeriesData(
+            series_inst_uid=series_uid,
+            series_descriptions=series_desc,
             filepaths=filepaths,
-            num_of_files=len(filepaths),
-            slice_thickness=slice_thickness,
-            has_contrast=True if contrast_applied else False,
-            kilo_voltage_peak=int(dataset.get("KVP", None)),
-            irradiation_event_uid=dataset.IrradiationEventUID,
+            num_of_filepaths=len(filepaths),
+            has_contrast="yes" if contrast_applied else "no",
+            irradiation_event_uid=dataset.get("IrradiationEventUID", "none"),
         )
 
         contrast_match = CONTRAST_PHASES.search(series_desc)
@@ -185,25 +284,56 @@ def filter_series_to_segment(
             series_data.contrast_phase = contrast_match.group().lower()
         else:
             series_data.contrast_phase = "native"
-
-        # add additional tags for extraction
-        if additional_dicom_tags is not None:
-            for tag in additional_dicom_tags:
-                tag_value = dataset.get(tag, None)
-                series_data.additional_tags[tag] = tag_value
+        # series_data = SeriesMetadata(
+        #     patient_id=ds.PatientID,
+        #     study_instance_uid=ds.StudyInstanceUID,
+        #     study_date=ds.StudyDate,
+        #     series_instance_uid=ds.SeriesInstanceUID,
+        #     series_description=ds.SeriesDescription,
+        #     filepaths=filepaths,
+        #     num_of_files=len(filepaths),
+        #     slice_thickness=slice_thickness,
+        #     has_contrast=True if contrast_applied else False,
+        #     kilo_voltage_peak=int(ds.get("KVP", None)),
+        #     irradiation_event_uid=ds.IrradiationEventUID,
+        # )
 
         # maps series data by contrast phase - "native", "arterial", ...
-        series_by_contrast[series_data.contrast_phase].append(series_data)
+        # series_by_contrast[series_data.contrast_phase].append(series_data)
+
+        series_data.kilo_voltage_peak = dataset.get("KVP", 0.0)
+        tube_currents = [
+            pydicom.dcmread(
+                p, stop_before_pixels=True, specific_tags=["XRayTubeCurrent"]
+            ).get("XRayTubeCurrent", None)
+            for p in filepaths
+        ]
+        series_data.mean_tube_current = mean(
+            [current for current in tube_currents if current]
+        )
+
+        series_data.mean_ctdi_vol = dose_report[series_data.irradiation_event_uid][
+            "mean_ctdi_vol"
+        ]
+        series_data.dose_length_product = dose_report[
+            series_data.irradiation_event_uid
+        ]["dlp"]
+
+        if series_data.contrast_phase in series_by_contrast:
+            series_by_contrast[series_data.contrast_phase].append(series_data)
+        else:
+            series_by_contrast[series_data.contrast_phase] = [series_data]
 
     # selects series with lowest slice thickness and highest number of files
     # selection per contrast phase, skips empty lists
-    selected_series_by_contrast_phase = {
-        phase: min(series_list, key=lambda v: (v.slice_thickness, -v.num_of_files))
-        for phase, series_list in series_by_contrast.items()
-        if series_list
+    selected_series = {
+        phase: min(
+            data_list, key=lambda data: (data.slice_thickness, -data.num_of_filepaths)
+        )
+        for phase, data_list in series_by_contrast.items()
     }
 
-    return selected_series_by_contrast_phase
+    return selected_series
 
 
 def write_dicom_tags(
@@ -260,92 +390,6 @@ def write_dicom_tags(
     return pseudoname
 
 
-def preprocess_dicom(
-    input_dir: Union[str, Path], output_dir: Union[str, Path] = "./inputs", **kwargs
-):
-    print("preprocessing dicom files")
-
-    # check if all additional tags are valid
-    additional_dicom_tags = kwargs.get("dicom_tags", None)
-    if additional_dicom_tags:
-        invalid_tags = [
-            tag for tag in additional_dicom_tags if not datadict.dictionary_has_tag(tag)
-        ]
-        if invalid_tags:
-            print(f"wrong dicom tag name(s): {', '.join(map(str, invalid_tags))}")
-            sys.exit(-1)
-
-    input_dir = Path(input_dir)
-
-    # prepare table to output dicom tags
-    df_cols = [
-        "PatientID",
-        "Pseudoname",
-        "StudyInstanceUID",
-        "StudyDate",
-        "SeriesInstanceUID",
-        "SeriesDescription",
-        "SliceThickness",
-        "HasContrast",
-        "ContrastPhase",
-        "KiloVoltagePeak",
-    ]
-
-    if additional_dicom_tags:
-        df_cols.extend(additional_dicom_tags)
-
-    # patient_tags_df_path = Path(output_dir, "sarco_patients_dicom_tags.csv")
-    # if not patient_tags_df_path.exists():
-    #     patient_tags_df = pd.DataFrame([], columns=df_cols)
-    #     patient_tags_df.to_csv(patient_tags_df_path, columns=df_cols, header=True, index=True, index_label="index")
-
-    i = 1
-    for root, _, files in input_dir.walk():
-        if not files or "DICOMDIR" in files:
-            continue
-
-        files_by_series_uid, dose_report_path = sort_files_by_series_uid(root, files)
-
-        dose_per_event = extract_dose_values(dose_report_path)
-
-        series_to_segment = filter_series_to_segment(
-            files_by_series_uid, additional_dicom_tags=additional_dicom_tags
-        )
-
-        print(f"found {len(series_to_segment)} valid series for segmentation")
-
-        pseudoname = f"sarco_{i}"
-        i += 1
-        output_case_dir = Path(output_dir, pseudoname)
-        os.makedirs(output_case_dir, exist_ok=True)
-
-        for data in series_to_segment.values():
-            dose = dose_per_event.get(data.irradiation_event_uid)
-            data.dose_length_product = dose.get("dlp", None)
-            data.mean_ctdi_vol = dose.get("mean_ctdi_vol", None)
-
-            data.print_data()
-
-            dicom_datasets = [pydicom.dcmread(file) for file in data.filepaths]
-            dicom_datasets = sort_dicoms(dicom_datasets)
-
-            validate_orientation(dicom_datasets)
-
-            output_filepath = output_case_dir.joinpath(f"{data.contrast_phase}.nii.gz")
-
-            try:
-                dicom_array_to_nifti(
-                    dicom_list=dicom_datasets,
-                    output_file=output_filepath,
-                    reorient_nifti=True,
-                )
-                print(
-                    f"id '{data.patient_id}' (pseudoname '{pseudoname}') with contrast phase '{data.contrast_phase}' written to nifti '{output_filepath.name}'"
-                )
-            except RuntimeError as err:
-                print(err)
-
-
 def extract_dose_values(dose_report: str) -> dict[str, float]:
     """
     Map IrradiationEventUID to dose values
@@ -389,6 +433,13 @@ def extract_dose_values(dose_report: str) -> dict[str, float]:
 
     walk_content(ds.ContentSequence)
     return event_to_dose
+
+
+def find_dicoms(dicom_dir: Path):
+    for root, _, files in dicom_dir.walk():
+        if len(files) == 0 or "DICOMDIR" in files:
+            continue
+        return list(root.iterdir())
 
 
 if __name__ == "__main__":

@@ -131,21 +131,19 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
 
-    if args.slices_num < 0:
-        raise ValueError(
-            f"invalid range for {args.slices_num}, --slices_num must be greater or equal 0"
-        )
-
     if args.command == "preprocess":
         preprocessing.preprocess_dicom(
             args.input_dir,
             args.output_dir,
-            anonymize=args.anonymize,
-            dicom_tags=args.dicom_tags,
         )
         print("finished preprocessing DICOM series")
 
     elif args.command == "segment":
+        if args.slices_num < 0:
+            raise ValueError(
+                f"invalid range for {args.slices_num}, --slices_num must be greater or equal 0"
+            )
+
         segmentation.segment_ct(
             args.input_dir,
             args.output_dir,
