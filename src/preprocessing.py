@@ -58,6 +58,31 @@ class SeriesMetadata:
             print(f"additional DICOM tags:\n{self.additional_tags}\n")
 
 
+@dataclass
+class SeriesData:
+    series_inst_uid: str = None
+    series_descriptions: str = None
+    filepaths: list[str | Path] = None
+    num_of_files: int = None
+    slice_thickness: float = None
+    has_contrast: bool = False
+    contrast_phase: str = None
+    kilo_voltage_peak: float = None
+    mean_tube_current: float = None
+    irradiation_event_uid: str = None
+    mean_ctdi_vol: float = None
+    dose_length_product: float = None
+
+
+@dataclass
+class StudyData:
+    patient_id: str = None
+    study_inst_uid: str = None
+    study_date: str = None
+    series_data: list[SeriesData] = None
+    number_of_ct_scans: int = None
+
+
 def sort_files_by_series_uid(
     root_dir: Path, filepaths: list[str]
 ) -> dict[str, list[str]]:
