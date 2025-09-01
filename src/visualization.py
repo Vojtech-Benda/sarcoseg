@@ -73,8 +73,6 @@ def overlay_spine_mask(
                 * 255
             ).astype(np.uint8)
 
-            if phase:
-                filename = phase + "_" + filename
             fullpath = output_dir.joinpath(filename)
             imageio.imsave(fullpath, overlay)
 
@@ -110,9 +108,8 @@ def overlay_tissue_mask(
             * 255
         ).astype(np.uint8)
 
-        if phase:
-            filename = phase + "_" + "tissue_overlay.png"
-        fullpath = output_dir.joinpath(filename)
+        # filename = phase + "_" + "tissue_overlay.png"
+        fullpath = output_dir.joinpath("tissue_overlay.png")
 
         imageio.imsave(fullpath, overlay)
     except RuntimeError as err:

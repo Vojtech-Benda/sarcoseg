@@ -133,8 +133,8 @@ def extract_slices(
     ]  # nib slicer requires range [..., i:i + 1]
     sliced_ct_volume = nib.funcs.as_closest_canonical(sliced_ct_volume)
 
-    name = ct_volume_path.name.removesuffix(".nii.gz")
-    output_filepath = Path(output_dir, f"{name}_tissue.nii.gz")
+    # name = ct_volume_path.name.removesuffix(".nii.gz")
+    output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
         print(f"file '{output_filepath}' exists, overwriting")
 
