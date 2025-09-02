@@ -1,6 +1,7 @@
 from typing import Union
 from pathlib import Path
 from time import perf_counter
+import shutil
 
 from totalsegmentator.python_api import totalsegmentator
 
@@ -27,17 +28,20 @@ def segment_ct(
     print(f"found {len(case_dirs)} case directories")
 
     for case_dir in case_dirs:
-        ct_volume_paths = list(case_dir.rglob("*/input_volume.nii.gz"))
+        ct_volume_paths = list(case_dir.rglob("*/*.nii.gz"))
         print("\n" + "-" * 25)
         print(
             f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
         )
 
         for ct_volume_path in ct_volume_paths:
+            # construct output path from [input_dir, study_inst_uid, series_inst_uid, file]
             case_output_dir = Path(output_dir, *ct_volume_path.parts[1:-1])
             case_images_dir = case_output_dir.joinpath("images")
             case_output_dir.mkdir(exist_ok=True, parents=True)
             case_images_dir.mkdir(exist_ok=True)
+
+            shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
 
             spine_results = segmentation.segment_spine(
                 ct_volume_path,

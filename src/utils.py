@@ -235,9 +235,3 @@ def compute_metrics(tissue_mask_array: NDArray, metrics: list, spacing=None):
     metric_results["area"] = area
     metric_results["mean_hu"] = mean_hu
     return metric_results
-
-
-def collect_results(
-    case_name: str, contrast_phase: str, metrics_results: dict, duration: float
-):
-    results = {case_name: case_name}

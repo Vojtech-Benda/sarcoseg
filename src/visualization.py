@@ -116,6 +116,10 @@ def overlay_tissue_mask(
         print(err)
 
 
+def save_preview_image():
+    pass
+
+
 def apply_ct_window(array, width=400, level=50):
     window_range = (level - width // 2, level + width // 2)
     return np.clip(array, window_range[0], window_range[1])
