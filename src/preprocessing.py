@@ -250,7 +250,7 @@ def select_series_to_segment(
             pydicom.dcmread(
                 p, stop_before_pixels=True, specific_tags=["XRayTubeCurrent"]
             ).get("XRayTubeCurrent", None)
-            for p in filepaths
+            for p in series_data.filepaths
         ]
         series_data.mean_tube_current = mean(
             [float(current) for current in tube_currents if current]
