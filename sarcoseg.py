@@ -8,7 +8,7 @@ from src.setup_project import setup_project
 
 def get_args():
     parser = argparse.ArgumentParser(
-        prog="l3smi", description="segmentation of L3 axial tissues"
+        prog="sarcoseg", description="segmentation of L3 axial tissues"
     )
 
     sub_parsers = parser.add_subparsers(dest="command", help="select command to run")
@@ -29,25 +29,15 @@ def get_args():
         default="./inputs",
     )
     preprocess_parser.add_argument(
-        "--anonymize", action="store_true", help="anonymize DICOM series before saving"
-    )
-
-    dicom_tags = (
-        "PatientID",
-        "StudyInstanceUID",
-        "StudyDate",
-        "SeriesDescription",
-        "SliceThickness",
-    )
-    preprocess_parser.add_argument(
-        "--dicom_tags",
-        nargs="+",
-        help=f"space separated list of additional DICOM tags to extract \n(default: {dicom_tags})",
+        "--collect-dicom-tags",
+        action="store_true",
+        help="collect all DICOM tags into one file (default False)",
+        default=False,
     )
 
     segment_parser = sub_parsers.add_parser(
         "segment",
-        help="segment muscle and fat tissue at L3 level in axial viewl",
+        help="segment muscle and fat tissue at L3 level in axial view",
         description="segmentation options",
     )
     segment_parser.add_argument(
@@ -81,16 +71,27 @@ def get_args():
         metavar="metrics",
     )
     segment_parser.add_argument(
-        "--save_segmentations", action="store_true", help="save segmentation masks"
+        "--save_segmentations",
+        action="store_true",
+        help="save segmentation masks (default false)",
+        default=False,
     )
     segment_parser.add_argument(
         "--save_mask_overlays",
         action="store_true",
-        help="save overlayed segmentation masks",
+        help="save overlayed segmentation masks (default false)",
+        default=False,
+    )
+    segment_parser.add_argument(
+        "--copy-dicom-tags",
+        action="store_true",
+        help="copy DICOM tags table file to outputs/<study_inst_uid>",
     )
 
     setup_parser = sub_parsers.add_parser(
-        "setup", help="setup the project for usage", description="setup project options"
+        "setup",
+        help="setup the project for usage",
+        description="create directories, download models, etc.",
     )
     setup_parser.add_argument(
         "-i",
@@ -98,7 +99,6 @@ def get_args():
         help="path to input directory",
         type=str,
         default="./inputs",
-        required=True,
     )
     setup_parser.add_argument(
         "-o",
@@ -122,7 +122,10 @@ def get_args():
         default="muscle_fat_tisse_stanford_0_0_2",
     )
     setup_parser.add_argument(
-        "-r", "--remove_model_zip", action="store_true", default=False
+        "--remove_model_zip",
+        action="store_true",
+        help="remove downloaded huggingface model ZIP file",
+        default=False,
     )
 
     return parser.parse_args()
@@ -137,6 +140,9 @@ if __name__ == "__main__":
             args.output_dir,
         )
         print("finished preprocessing DICOM series")
+
+        if args.collect_dicom_tags:
+            preprocessing.collect_study_tags(args.output_dir)
 
     elif args.command == "segment":
         if args.slices_num < 0:

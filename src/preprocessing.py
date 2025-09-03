@@ -2,13 +2,14 @@ import sys
 import re
 
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 from dataclasses import dataclass
 
-import pydicom
 import pandas as pd
+import pydicom
 from statistics import mean
 from dicom2nifti.convert_dicom import dicom_array_to_nifti
+from datetime import datetime
 
 
 SERIES_DESC_PATTERN = re.compile(
@@ -41,19 +42,15 @@ class SeriesData:
 @dataclass
 class StudyData:
     patient_id: str = None
-    pseudoname: str = None
     study_inst_uid: str = None
     study_date: str = None
     series_dict: dict[str, SeriesData] = None
-    number_of_ct_scans: int = None
 
 
 def preprocess_dicom(
     input_dir: Union[str, Path], output_dir: Union[str, Path] = "./inputs"
 ):
-    print("preprocessing dicom files")
-
-    # check if all additional tags are valid
+    print("preprocessing DICOM files")
 
     if not isinstance(input_dir, Path):
         input_dir = Path(input_dir)
@@ -79,6 +76,11 @@ def preprocess_dicom(
             f"saving id `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
         )
 
+        output_study_dir = Path(output_dir, study_data.study_inst_uid)
+        output_study_dir.mkdir(exist_ok=True, parents=True)
+
+        write_dicom_tags(study_data, output_study_dir)
+
         for series_data in study_data.series_dict.values():
             print(
                 f"series instance uid `{series_data.series_inst_uid}`\n"
@@ -88,11 +90,14 @@ def preprocess_dicom(
 
             dicom_datasets = [pydicom.dcmread(file) for file in series_data.filepaths]
 
-            output_case_dir = Path(
-                output_dir, study_data.study_inst_uid, series_data.series_inst_uid
-            )
-            output_case_dir.mkdir(exist_ok=True, parents=True)
-            output_filepath = output_case_dir.joinpath("input_volume.nii.gz")
+            output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
+            output_series_dir.mkdir(exist_ok=True, parents=True)
+            output_filepath = output_series_dir.joinpath("input_volume.nii.gz")
+
+            if output_filepath.exists():
+                print(
+                    f"overwriting existing input_volume.nii.gz at {str(output_filepath)}"
+                )
 
             try:
                 dicom_array_to_nifti(
@@ -103,6 +108,7 @@ def preprocess_dicom(
                 print(f"nifti written to `{output_filepath}`\n")
             except RuntimeError as err:
                 print(err)
+
         print("-" * 25)
 
 
@@ -174,9 +180,7 @@ def filter_dicom_files(
         else:
             files_by_uid[series_uid] = [file]
 
-    print(
-        f"\nid '{study_data.patient_id}' has {len(dicom_files)}, filtered {len(files_by_uid.keys())} series"
-    )
+    print(f"\nid '{study_data.patient_id}' filtered {len(files_by_uid.keys())} series")
     return study_data, files_by_uid, dose_report_file
 
 
@@ -391,6 +395,64 @@ def find_dicoms(dicom_dir: Path):
         if len(files) == 0 or "DICOMDIR" in files:
             continue
         return list(root.iterdir())
+
+
+def write_dicom_tags(study: StudyData, study_dir: Path):
+    rows: list[dict[str, Any]] = []
+    for _, series in study.series_dict.items():
+        row = {
+            "patient_id": study.patient_id,
+            "study_inst_uid": study.study_inst_uid,
+            "study_date": study.study_date,
+            "series_inst_uid": series.series_inst_uid,
+            "series_description": series.series_description,
+            "slice_thickness": series.slice_thickness,
+            "has_contrast": series.has_contrast,
+            "contrast_phase": series.contrast_phase,
+            "kilo_voltage_peak": series.kilo_voltage_peak,
+            "mean_tube_current": series.mean_tube_current,
+            "mean_ctdi_vol": series.mean_ctdi_vol,
+            "dose_length_product": series.dose_length_product,
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows, columns=rows[0].keys())
+    filepath = study_dir.joinpath("dicom_tags.csv")
+
+    if filepath.exists():
+        print(f"overwriting existing dicom_tags.csv at `{str(filepath)}`")
+
+    df.to_csv(
+        filepath,
+        sep=",",
+        na_rep="nan",
+        index=False,
+        columns=df.columns,
+    )
+    print(
+        f"id `{study.patient_id}` study instance uid `{study.study_inst_uid}` ({len(df.series_inst_uid.unique())} series) written DICOM tags to {filepath}"
+    )
+
+
+def collect_study_tags(input_dir: Union[str, Path]):
+    if not isinstance(input_dir, Path):
+        input_dir = Path(input_dir)
+
+    dicom_tags_files = list(input_dir.rglob("dicom_tags.*"))
+    df = pd.concat(
+        (pd.read_csv(file, index_col=None, header=0) for file in dicom_tags_files),
+        axis=0,
+        ignore_index=True,
+    )
+
+    filepath = Path(
+        "./outputs",
+        "dicom_tags" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
+    )
+    df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
+    print(
+        f"written DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+    )
 
 
 if __name__ == "__main__":
