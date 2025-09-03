@@ -158,8 +158,6 @@ def filter_dicom_files(
         )
         series_uid = ds.SeriesInstanceUID
 
-        # series_desc: str = ds.SeriesDescription
-
         # filter out files in series matching pattern:
         # ("protocol", "topogram", "scout", "patient", "dose", "report"), ignoring case
         if "dose report" in ds.SeriesDescription.lower():
@@ -207,16 +205,6 @@ def select_series_to_segment(
 
         # filter by words in SeriesDescription
         series_desc: str = dataset.SeriesDescription
-        # if SERIES_DESC_PATTERN.search(series_desc):
-        #     continue
-
-        # slice_thickness = (
-        #     float(dataset.SliceThickness)
-        #     if hasattr(dataset, "SliceThickness")
-        #     else None
-        # )
-        # if slice_thickness is None:
-        #     continue
 
         contrast_applied = dataset.get("ContrastBolusAgent", None)
 
@@ -273,76 +261,7 @@ def select_series_to_segment(
             series_data.irradiation_event_uid
         ]["dlp"]
 
-        # if series_data.contrast_phase in series_by_contrast:
-        #     series_by_contrast[series_data.contrast_phase].append(series_data)
-        # else:
-        #     series_by_contrast[series_data.contrast_phase] = [series_data]
-
-    # selects series with lowest slice thickness and highest number of files
-    # selection per contrast phase, skips empty lists
-    # selected_series = {
-    #     phase: min(
-    #         data_list, key=lambda data: (data.slice_thickness, -data.num_of_filepaths)
-    #     )
-    #     for phase, data_list in series_by_contrast.items()
-    # }
-
     return selected_series
-
-
-"""
-def write_dicom_tags(
-    path_df_dicom_tags: Union[Path, str], data: SeriesMetadata, add_dicom_tags: list
-) -> int:
-    df_dicom_tags = pd.read_csv(path_df_dicom_tags, header=0, index_col=0)
-
-    last_row_index = len(df_dicom_tags)
-
-    # start patient indexes at 1
-    pseudoname = f"sarco_{last_row_index + 1}"
-
-    
-    cols: [
-        "PatientID",
-        "Pseudoname",
-        "Filename",
-        "StudyInstanceUID",
-        "StudyDate",
-        "SeriesDescription",
-        "SliceThickness",
-        "HasContrast",
-        "ContrastPhase",
-        "KiloVoltagePeak"
-        ] + additional_dicom_tags
-    row_data = [
-        data.patient_id,
-        pseudoname,
-        f"{data.contrast_phase}.nii.gz",
-        data.study_instance_uid,
-        data.study_date,
-        data.series_description,
-        data.slice_thickness,
-        data.has_contrast,
-        data.contrast_phase,
-        data.kilo_voltage_peak,
-    ]
-
-    if add_dicom_tags:
-        row_data.extend([data.additional_tags[tag] for tag in add_dicom_tags])
-
-    df_dicom_tags.loc[last_row_index] = row_data
-    df_dicom_tags.to_csv(
-        path_df_dicom_tags,
-        columns=df_dicom_tags.columns,
-        header=True,
-        index=True,
-        index_label="index",
-    )
-    print(
-        f"id '{data.patient_id}' (pseudoname '{pseudoname}') contrast_phase '{data.contrast_phase}' written to csv"
-    )
-    return pseudoname
-"""
 
 
 def extract_dose_values(dose_report: str) -> dict[str, float]:
