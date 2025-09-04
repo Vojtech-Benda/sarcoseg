@@ -102,7 +102,7 @@ def extract_slices(
     ct_volume = nib.funcs.as_closest_canonical(ct_volume)
 
     # requires slices_num=2 at minimum
-    if slices_num > 1:
+    if slices_num >= 2:
         slices_range = [
             # extract slices in Z direction (superior-inferior)
             body_centroid[-1] - (slices_num // 2),
@@ -201,7 +201,9 @@ def postprocess_tissue_masks(
     return {"processed_mask": out, "duration": duration}
 
 
-def compute_metrics(tissue_mask_array: NDArray, metrics: list, spacing=None):
+def compute_metrics(
+    tissue_mask_array: NDArray, tissue_vol: NDArray, metrics: list, spacing=None
+):
     # if None use 1mm spacing in all directions
     if spacing is None:
         spacing = (1.0, 1.0, 1.0)
@@ -217,6 +219,8 @@ def compute_metrics(tissue_mask_array: NDArray, metrics: list, spacing=None):
     elif mask_shape[-1] > 1:
         pixel_size = np.prod(spacing) / 10000.0  # pixel size is in cm^3
 
+    tissue_array = tissue_vol.get_fdata()
+
     metric_results = {}
 
     # calculate area in cm^2
@@ -228,7 +232,9 @@ def compute_metrics(tissue_mask_array: NDArray, metrics: list, spacing=None):
         for tissue in TISSUE_LABEL_INDEX
     }
     mean_hu = {
-        tissue: np.mean(tissue_mask_array[..., TISSUE_LABEL_INDEX.index(tissue)])
+        tissue: np.mean(
+            tissue_array[tissue_mask_array[..., TISSUE_LABEL_INDEX.index(tissue)]]
+        )
         for tissue in TISSUE_LABEL_INDEX
     }
 
