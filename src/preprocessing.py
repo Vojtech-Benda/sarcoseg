@@ -353,7 +353,7 @@ def write_dicom_tags(study: StudyData, study_dir: Path):
     )
 
 
-def collect_study_tags(input_dir: Union[str, Path]):
+def collect_all_study_tags(input_dir: Union[str, Path]):
     if not isinstance(input_dir, Path):
         input_dir = Path(input_dir)
 
@@ -366,11 +366,11 @@ def collect_study_tags(input_dir: Union[str, Path]):
 
     filepath = Path(
         "./outputs",
-        "dicom_tags" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
+        "all_dicom_tags" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
     )
     df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
     print(
-        f"written DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+        f"written all DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
     )
 
 
