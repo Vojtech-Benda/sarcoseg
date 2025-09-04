@@ -21,11 +21,11 @@ def get_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     preprocess_parser.add_argument(
-        "-i", "--input_dir", type=str, help="path to DICOM files", required=True
+        "-i", "--input-dir", type=str, help="path to DICOM files", required=True
     )
     preprocess_parser.add_argument(
         "-o",
-        "--output_dir",
+        "--output-dir",
         type=str,
         help="path to save preprocessed NifTi files",
         default="./inputs",
@@ -33,7 +33,7 @@ def get_args():
     preprocess_parser.add_argument(
         "--collect-dicom-tags",
         action="store_true",
-        help="collect all DICOM tags into one table file at <input_dir>/<dicom_tags_d-m-Y_H-M-S.csv>",
+        help="collect all DICOM tags into one table file at <output-dir>/<dicom_tags_d-m-Y_H-M-S.csv>",
         default=False,
     )
 
@@ -45,20 +45,20 @@ def get_args():
     )
     segment_parser.add_argument(
         "-i",
-        "--input_dir",
+        "--input-dir",
         type=str,
         help="path to NifTi data to segment",
         default="./inputs",
     )
     segment_parser.add_argument(
         "-o",
-        "--output_dir",
+        "--output-dir",
         type=str,
         help="path to output directory",
         default="./outputs",
     )
     segment_parser.add_argument(
-        "--slices_num",
+        "--slices-num",
         type=int,
         help=(
             "total number of slices to extract along superior/inferior direction with centroid_z_index at middle slice\n"
@@ -68,19 +68,19 @@ def get_args():
         default=0,
     )
     segment_parser.add_argument(
-        "--add_metrics",
+        "--add-metrics",
         nargs="+",
         help="space separated list of additional metrics to compute",
         metavar="metrics",
     )
     segment_parser.add_argument(
-        "--save_segmentations",
+        "--save-segmentations",
         action="store_true",
         help="save segmentation masks",
         default=False,
     )
     segment_parser.add_argument(
-        "--save_mask_overlays",
+        "--save-mask-overlays",
         action="store_true",
         help="save overlayed segmentation masks",
         default=False,
@@ -95,7 +95,7 @@ def get_args():
     segment_parser.add_argument(
         "--collect-metric-results",
         action="store_true",
-        help="collect all metric results into one table file at <output_dir>/<metric_results_d-m-Y_H-M-S.csv>",
+        help="collect all metric results into one table file at <output-dir>/<metric_results_d-m-Y_H-M-S.csv>",
         default=False,
     )
 
@@ -107,34 +107,34 @@ def get_args():
     )
     setup_parser.add_argument(
         "-i",
-        "--input_dir",
+        "--input-dir",
         help="path to input directory",
         type=str,
         default="./inputs",
     )
     setup_parser.add_argument(
         "-o",
-        "--output_dir",
+        "--output-dir",
         help="path to output directory",
         type=str,
         default="./outputs",
     )
     setup_parser.add_argument(
         "-m",
-        "--model_dir",
+        "--model-dir",
         help="path to model directory",
         type=str,
         default="./models",
     )
     setup_parser.add_argument(
         "-n",
-        "--model_name",
+        "--model-name",
         help="model name",
         type=str,
         default="muscle_fat_tisse_stanford_0_0_2",
     )
     setup_parser.add_argument(
-        "--remove_model_zip",
+        "--remove-model-zip",
         action="store_true",
         help="remove downloaded huggingface model ZIP file",
         default=False,
