@@ -8,7 +8,8 @@ from src.setup_project import setup_project
 
 def get_args():
     parser = argparse.ArgumentParser(
-        prog="l3smi", description="segmentation of L3 axial tissues"
+        prog="sarcoseg",
+        description="segmentation of L3 axial tissues",
     )
 
     sub_parsers = parser.add_subparsers(dest="command", help="select command to run")
@@ -17,6 +18,7 @@ def get_args():
         "preprocess",
         help="preprocess DICOM files and save as NifTi format",
         description="preprocessing options",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     preprocess_parser.add_argument(
         "-i", "--input_dir", type=str, help="path to DICOM files", required=True
@@ -29,26 +31,17 @@ def get_args():
         default="./inputs",
     )
     preprocess_parser.add_argument(
-        "--anonymize", action="store_true", help="anonymize DICOM series before saving"
-    )
-
-    dicom_tags = (
-        "PatientID",
-        "StudyInstanceUID",
-        "StudyDate",
-        "SeriesDescription",
-        "SliceThickness",
-    )
-    preprocess_parser.add_argument(
-        "--dicom_tags",
-        nargs="+",
-        help=f"space separated list of additional DICOM tags to extract \n(default: {dicom_tags})",
+        "--collect-dicom-tags",
+        action="store_true",
+        help="collect all DICOM tags into one table file at <input_dir>/<dicom_tags_d-m-Y_H-M-S.csv>",
+        default=False,
     )
 
     segment_parser = sub_parsers.add_parser(
         "segment",
-        help="segment muscle and fat tissue at L3 level in axial viewl",
+        help="segment muscle and fat tissue at L3 level in axial view",
         description="segmentation options",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     segment_parser.add_argument(
         "-i",
@@ -68,9 +61,9 @@ def get_args():
         "--slices_num",
         type=int,
         help=(
-            "number of slices in superior AND inferior direction from centroid index to extract for tissue segmentation\n"
-            "example: slices_num=10, extract [centroid_index - 10:centroid_index + 10], segmentation over 20 slices\n"
-            "must be >=0"
+            "total number of slices to extract along superior/inferior direction with centroid_z_index at middle slice\n"
+            "eg: slices_num=5, centroid_z_index=30 extracts slices in range (28, 32)\n"
+            "for usage must be >= 2"
         ),
         default=0,
     )
@@ -81,16 +74,36 @@ def get_args():
         metavar="metrics",
     )
     segment_parser.add_argument(
-        "--save_segmentations", action="store_true", help="save segmentation masks"
+        "--save_segmentations",
+        action="store_true",
+        help="save segmentation masks",
+        default=False,
     )
     segment_parser.add_argument(
         "--save_mask_overlays",
         action="store_true",
         help="save overlayed segmentation masks",
+        default=False,
+    )
+    # TODO: add/improve later
+    # segment_parser.add_argument(
+    #     "--copy-dicom-tags",
+    #     action="store_true",
+    #     help="copy <study_inst_uid> DICOM tags table file to <output_dir>/<study_inst_uid>",
+    #     default=False,
+    # )
+    segment_parser.add_argument(
+        "--collect-metric-results",
+        action="store_true",
+        help="collect all metric results into one table file at <output_dir>/<metric_results_d-m-Y_H-M-S.csv>",
+        default=False,
     )
 
     setup_parser = sub_parsers.add_parser(
-        "setup", help="setup the project for usage", description="setup project options"
+        "setup",
+        help="setup the project for usage",
+        description="create directories, download models, etc.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     setup_parser.add_argument(
         "-i",
@@ -98,7 +111,6 @@ def get_args():
         help="path to input directory",
         type=str,
         default="./inputs",
-        required=True,
     )
     setup_parser.add_argument(
         "-o",
@@ -122,8 +134,18 @@ def get_args():
         default="muscle_fat_tisse_stanford_0_0_2",
     )
     setup_parser.add_argument(
-        "-r", "--remove_model_zip", action="store_true", default=False
+        "--remove_model_zip",
+        action="store_true",
+        help="remove downloaded huggingface model ZIP file",
+        default=False,
     )
+
+    # TODO: add/improve later
+    # sub_parsers.add_parser(
+    #     "compute-metrics",
+    #     help="compute metrics",
+    #     description="requires segmentation data to be present",
+    # )
 
     return parser.parse_args()
 
@@ -138,10 +160,13 @@ if __name__ == "__main__":
         )
         print("finished preprocessing DICOM series")
 
+        if args.collect_dicom_tags:
+            preprocessing.collect_all_study_tags(args.output_dir)
+
     elif args.command == "segment":
-        if args.slices_num < 0:
+        if args.slices_num != 0 and args.slices_num < 2:
             raise ValueError(
-                f"invalid range for {args.slices_num}, --slices_num must be greater or equal 0"
+                f"invalid value for --slices_num (used {args.slices_num}), for usage must be greater or equal 2"
             )
 
         segmentation.segment_ct(
@@ -154,6 +179,9 @@ if __name__ == "__main__":
         )
         print("finished CT segmentation")
 
+        if args.collect_metric_results:
+            segmentation.collect_all_metric_results(args.output_dir)
+
     elif args.command == "setup":
         setup_project(
             args.input_dir,
@@ -163,5 +191,5 @@ if __name__ == "__main__":
             args.remove_model_zip,
         )
     else:
-        print(f"unknown command '{args.command}'")
+        print(f"unknown command `{args.command}`")
         sys.exit(-1)

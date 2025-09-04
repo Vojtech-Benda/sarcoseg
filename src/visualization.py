@@ -27,7 +27,6 @@ def overlay_spine_mask(
     spine_mask_path: Path,
     vert_body_centroid: NDArray,
     output_dir: Path,
-    phase: str = None,
 ):
     # reorient the volume to be in LPI directions for 2D plane
     volumes = [
@@ -84,7 +83,6 @@ def overlay_tissue_mask(
     tissue_vol_path: Path,
     tissue_mask_path: Path,
     output_dir: Path,
-    phase: str = None,
 ):
     # reorient slices into LPI direction for 2D plane
     image = nib.as_closest_canonical(nib.load(tissue_vol_path)).as_reoriented(LPI_ORNT)

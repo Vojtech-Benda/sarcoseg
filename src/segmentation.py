@@ -1,11 +1,13 @@
-from typing import Union
+from typing import Union, Any
 from pathlib import Path
 from time import perf_counter
+from datetime import datetime
 import shutil
-
+import pandas as pd
 from totalsegmentator.python_api import totalsegmentator
 
 import nibabel as nib
+from numpy import nan
 from nnunet.inference.predict import predict_cases
 
 from src import segmentation
@@ -33,6 +35,8 @@ def segment_ct(
         print(
             f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
         )
+
+        metric_results_list: list[dict[str, Any]] = []
 
         for ct_volume_path in ct_volume_paths:
             # construct output path from [input_dir, study_inst_uid, series_inst_uid, file]
@@ -70,18 +74,23 @@ def segment_ct(
 
             metric_results = utils.compute_metrics(
                 postproc_results["processed_mask"],
+                tissue_results["volume"],
                 metrics=additional_metrics,
                 spacing=tissue_results["spacing"],
             )
 
-            phase = str(ct_volume_path.name).removesuffix(".nii.gz")
             duration = (
                 spine_results["duration"]
                 + slice_results["duration"]
                 + tissue_results["duration"]
                 + postproc_results["duration"]
             )
-            utils.collect_results(case_dir.name, phase, metric_results, duration)
+
+            study_inst_uid, series_inst_uid = ct_volume_path.parts[1:-1]
+            metric_results["duration"] = duration
+            metric_results["study_inst_uid"] = study_inst_uid
+            metric_results["series_inst_uid"] = series_inst_uid
+            metric_results_list.append(metric_results)
 
             if save_mask_overlays:
                 visualization.overlay_spine_mask(
@@ -89,15 +98,17 @@ def segment_ct(
                     spine_results["spine_mask_path"],
                     slice_results["vert_centroid"],
                     output_dir=case_images_dir,
-                    phase=phase,
                 )
 
                 visualization.overlay_tissue_mask(
                     slice_results["sliced_volume_path"],
                     tissue_results["mask_filepath"],
                     output_dir=case_images_dir,
-                    phase=phase,
                 )
+
+        write_metric_results(
+            metric_results_list, Path(output_dir, ct_volume_path.parts[1])
+        )
 
 
 def segment_spine(
@@ -200,3 +211,50 @@ def segment_tissues(
         "spacing": spacing,
         "duration": duration,
     }
+
+
+def write_metric_results(metric_results: list[dict[str, Any]], output_study_dir: Path):
+    rows: list[dict[str, Any]] = []
+    for res in metric_results:
+        rows.append(
+            {
+                "study_inst_uid": res["study_inst_uid"],
+                "series_inst_uid": res["series_inst_uid"],
+                "muscle_area": res["area"]["muscle"],
+                "muscle_mean_hu": res["mean_hu"]["muscle"],
+                "sat_area": res["area"]["sat"],
+                "sat_mean_hu": res["mean_hu"]["sat"],
+                "vat_area": res["area"]["vat"],
+                "vat_mean_hu": res["mean_hu"]["vat"],
+                "imat_area": res["area"]["imat"],
+                "imat_mean_hu": res["mean_hu"]["imat"],
+                "duration": res["duration"],
+            }
+        )
+
+    df = pd.DataFrame(rows, columns=rows[0].keys())
+    filepath = output_study_dir.joinpath("metric_results.csv")
+    if filepath.exists():
+        print(f"overwriting existing metric_results.csv at `{filepath}`")
+    df.to_csv(filepath, sep=",", na_rep=nan, columns=df.columns, index=None)
+
+
+def collect_all_metric_results(input_dir: Union[str, Path]):
+    if not isinstance(input_dir, Path):
+        input_dir = Path(input_dir)
+
+    metrics_files = list(input_dir.rglob("metric_results.csv"))
+    df = pd.concat(
+        (pd.read_csv(file, index_col=None, header=0) for file in metrics_files),
+        axis=0,
+        ignore_index=True,
+    )
+
+    filepath = Path(
+        "./outputs",
+        "all_metric_results_" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
+    )
+    df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
+    print(
+        f"written all metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+    )
