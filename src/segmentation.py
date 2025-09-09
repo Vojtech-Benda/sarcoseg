@@ -31,6 +31,12 @@ def segment_ct(
 
     for case_dir in case_dirs:
         ct_volume_paths = list(case_dir.rglob("*/*.nii.gz"))
+        df_tags = pd.read_csv(
+            Path(case_dir, "dicom_tags.csv"),
+            index_col=False,
+            header=0,
+            usecols=["participant", "patient_id", "study_inst_uid", "series_inst_uid"],
+        )
         print("\n" + "-" * 25)
         print(
             f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
@@ -87,9 +93,12 @@ def segment_ct(
             )
 
             study_inst_uid, series_inst_uid = ct_volume_path.parts[1:-1]
-            metric_results["duration"] = duration
+            metric_results["participant"] = df_tags.loc[
+                df_tags["series_inst_uid"] == series_inst_uid
+            ]["participant"].item()
             metric_results["study_inst_uid"] = study_inst_uid
             metric_results["series_inst_uid"] = series_inst_uid
+            metric_results["duration"] = duration
             metric_results_list.append(metric_results)
 
             if save_mask_overlays:
@@ -218,6 +227,7 @@ def write_metric_results(metric_results: list[dict[str, Any]], output_study_dir:
     for res in metric_results:
         rows.append(
             {
+                "participant": res["participant"],
                 "study_inst_uid": res["study_inst_uid"],
                 "series_inst_uid": res["series_inst_uid"],
                 "muscle_area": res["area"]["muscle"],
