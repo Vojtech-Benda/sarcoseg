@@ -10,6 +10,7 @@ import pydicom
 from statistics import mean
 from dicom2nifti.convert_dicom import dicom_array_to_nifti
 from datetime import datetime
+from src import database
 
 
 SERIES_DESC_PATTERN = re.compile(
@@ -317,9 +318,14 @@ def find_dicoms(dicom_dir: Path):
 
 
 def write_dicom_tags(study: StudyData, study_dir: Path):
+    db_data = database.query_patients(
+        columns=["PARTICIPANT"], patient_id=study.patient_id
+    )
+
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
+            "participant": db_data["PARTICIPANT"],
             "patient_id": study.patient_id,
             "study_inst_uid": study.study_inst_uid,
             "study_date": study.study_date,
@@ -366,7 +372,7 @@ def collect_all_study_tags(input_dir: Union[str, Path]):
 
     filepath = Path(
         "./outputs",
-        "all_dicom_tags" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
+        "all_dicom_tags_" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
     )
     df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
     print(
