@@ -100,7 +100,7 @@ def get_args():
     )
 
     setup_parser = sub_parsers.add_parser(
-        "setup",
+        "setup-project",
         help="setup the project for usage",
         description="create directories, download models, etc.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -131,7 +131,7 @@ def get_args():
         "--model-name",
         help="model name",
         type=str,
-        default="muscle_fat_tisse_stanford_0_0_2",
+        default="muscle_fat_tissue_stanford_0_0_2",
     )
     setup_parser.add_argument(
         "--remove-model-zip",
@@ -182,7 +182,7 @@ if __name__ == "__main__":
         if args.collect_metric_results:
             segmentation.collect_all_metric_results(args.output_dir)
 
-    elif args.command == "setup":
+    elif args.command == "setup-project":
         setup_project(
             args.input_dir,
             args.output_dir,

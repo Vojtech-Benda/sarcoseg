@@ -2,6 +2,7 @@ import os
 from zipfile import ZipFile
 from pathlib import Path
 import huggingface_hub as hf
+from totalsegmentator.python_api import download_pretrained_weights
 
 
 def setup_project(
@@ -12,6 +13,9 @@ def setup_project(
     remove_model_zip: bool = False,
 ):
     for d in (input_dir, output_dir, model_dir):
+        if os.path.exists(d):
+            print(f"directory `{d}` exists")
+            continue
         os.makedirs(d, exist_ok=True)
         print(f"created directory {d}")
 
@@ -25,10 +29,27 @@ def setup_project(
         repo_id=model_repo, filename="all.zip", local_dir=model_path, repo_type="model"
     )
 
-    with ZipFile(zip_filepath) as zipf:
-        zipf.extractall(model_path)
-        print(f"unzipped model to {model_path}")
+    if not model_path.joinpath("model_final_checkpoint.model").exists():
+        with ZipFile(zip_filepath) as zipf:
+            zipf.extractall(model_path)
+            print(f"unzipped model to {model_path}")
 
-    if remove_model_zip:
-        os.remove(zip_filepath)
-        print(f"removed zip file {zip_filepath}")
+        if remove_model_zip:
+            os.remove(zip_filepath)
+            print(f"removed zip file {zip_filepath}")
+    else:
+        print(f"muscle_adipose_tissue model exists at `{model_path}`")
+
+    """
+    TotalSegmentator task ids:
+    291 - organs
+    292 - vertebrae
+    293 - cardiac
+    294 - muscles
+    295 - ribs
+    298 - 6mm model
+    """
+    task_ids = [291, 292, 293, 294, 295, 298]
+    print("downloading TotalSegmentator models")
+    for tid in task_ids:
+        download_pretrained_weights(tid)
