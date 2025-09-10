@@ -25,10 +25,13 @@ def segment_ct(
     slices_num: int = 0,
     save_segmentations: bool = False,
     save_mask_overlays: bool = False,
+    collect_metric_results: bool = False,
 ):
     case_dirs = list(Path(input_dir).glob("*/"))
     print(f"found {len(case_dirs)} case directories")
 
+    output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    output_dir.mkdir()
     for case_dir in case_dirs:
         ct_volume_paths = list(case_dir.rglob("*/*.nii.gz"))
         df_tags = pd.read_csv(
@@ -118,6 +121,9 @@ def segment_ct(
         write_metric_results(
             metric_results_list, Path(output_dir, ct_volume_path.parts[1])
         )
+
+    if collect_all_metric_results:
+        collect_all_metric_results(output_dir)
 
 
 def segment_spine(
@@ -262,7 +268,8 @@ def collect_all_metric_results(input_dir: Union[str, Path]):
 
     filepath = Path(
         "./outputs",
-        "all_metric_results_" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
+        input_dir,
+        "all_metric_results.csv",
     )
     df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
     print(

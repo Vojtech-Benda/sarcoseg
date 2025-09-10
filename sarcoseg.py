@@ -176,11 +176,9 @@ if __name__ == "__main__":
             slices_num=args.slices_num,
             save_segmentations=args.save_segmentations,
             save_mask_overlays=args.save_mask_overlays,
+            collect_metric_results=args.collect_metric_results,
         )
         print("finished CT segmentation")
-
-        if args.collect_metric_results:
-            segmentation.collect_all_metric_results(args.output_dir)
 
     elif args.command == "setup-project":
         setup_project(
