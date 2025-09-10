@@ -4,6 +4,9 @@ outputs/
 
 # environment items
 .venv/
+.venv-test/
+src/fnosarcoseg.egg-info/
+build/
 
 models/
 
