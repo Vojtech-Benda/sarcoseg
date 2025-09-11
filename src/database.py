@@ -1,5 +1,6 @@
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
+import requests
 
 
 API_HANDLER = APIWrapper(
@@ -29,3 +30,14 @@ def query_patients(columns: list[str], patient_id: str):
         return {c: rows[0].get(c, "n/a") for c in columns}
     else:
         return {c: "n/a" for c in columns}
+
+
+def is_labkey_reachable(verbose=False):
+    try:
+        response = requests.get(url="https://4lerco.fno.cz", timeout=5)
+        if verbose:
+            print(f"4lerco.fno.cz reachable: status {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"4lerco.fno.cz unreachable: {e}")
+        return False
+    return True

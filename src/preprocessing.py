@@ -1,5 +1,6 @@
 import sys
 import re
+import shutil
 
 from pathlib import Path
 from typing import Any, Union
@@ -49,7 +50,9 @@ class StudyData:
 
 
 def preprocess_dicom(
-    input_dir: Union[str, Path], output_dir: Union[str, Path] = "./inputs"
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path] = "./inputs",
+    query_labkey: bool = False,
 ):
     print("preprocessing DICOM files")
 
@@ -80,7 +83,7 @@ def preprocess_dicom(
         output_study_dir = Path(output_dir, study_data.study_inst_uid)
         output_study_dir.mkdir(exist_ok=True, parents=True)
 
-        write_dicom_tags(study_data, output_study_dir)
+        write_dicom_tags(study_data, output_study_dir, query_labkey)
 
         for series_data in study_data.series_dict.values():
             print(
@@ -317,15 +320,17 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(study: StudyData, study_dir: Path):
-    db_data = database.query_patients(
-        columns=["PARTICIPANT"], patient_id=study.patient_id
-    )
+def write_dicom_tags(study: StudyData, study_dir: Path, query_labkey: bool = False):
+    labkey_data = None
+    labkey_columns = ["PARTICIPANT"]
+    if query_labkey:
+        labkey_data = database.query_patients(
+            columns=labkey_columns, patient_id=study.patient_id
+        )
 
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
-            "participant": db_data["PARTICIPANT"],
             "patient_id": study.patient_id,
             "study_inst_uid": study.study_inst_uid,
             "study_date": study.study_date,
@@ -339,6 +344,9 @@ def write_dicom_tags(study: StudyData, study_dir: Path):
             "mean_ctdi_vol": series.mean_ctdi_vol,
             "dose_length_product": series.dose_length_product,
         }
+        if labkey_data:
+            row.update({col.lower(): labkey_data[col] for col in labkey_columns})
+
         rows.append(row)
 
     df = pd.DataFrame(rows, columns=rows[0].keys())
