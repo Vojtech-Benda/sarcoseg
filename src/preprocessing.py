@@ -8,9 +8,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 import pydicom
+import dcm2niix
 from statistics import mean
-from dicom2nifti.convert_dicom import dicom_array_to_nifti
 from datetime import datetime
+
 from src import database
 
 
@@ -92,11 +93,15 @@ def preprocess_dicom(
                 f"contrast phase `{series_data.has_contrast}`, type `{series_data.contrast_phase}`"
             )
 
-            dicom_datasets = [pydicom.dcmread(file) for file in series_data.filepaths]
+            # dicom_datasets = [pydicom.dcmread(file) for file in series_data.filepaths]
 
             output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
             output_series_dir.mkdir(exist_ok=True, parents=True)
             output_filepath = output_series_dir.joinpath("input_volume.nii.gz")
+
+            tmp_dir = Path(output_study_dir, f"tmp_{series_data.series_inst_uid}")
+            tmp_dir.mkdir(exist_ok=True, parents=True)
+            [shutil.copy2(file, tmp_dir / file.name) for file in series_data.filepaths]
 
             if output_filepath.exists():
                 print(
@@ -104,14 +109,35 @@ def preprocess_dicom(
                 )
 
             try:
-                dicom_array_to_nifti(
-                    dicom_list=dicom_datasets,
-                    output_file=output_filepath,
-                    reorient_nifti=True,
-                )
-                print(f"nifti written to `{output_filepath}`\n")
+                args = [
+                    "-o",
+                    str(output_series_dir),
+                    "-f",
+                    "input_volume",
+                    "-z",
+                    "y",
+                    "-b",
+                    "n",
+                    "-w",
+                    "1",
+                    str(tmp_dir),
+                ]
+                returncode = dcm2niix.main(args, capture_output=True, text=True)
+                print(f"finished NifTI conversion with {returncode=}")
+                shutil.rmtree(tmp_dir)
             except RuntimeError as err:
                 print(err)
+                print(f"finished NifTI conversion with {returncode=}")
+
+            # try:
+            #     dicom_array_to_nifti(
+            #         dicom_list=dicom_datasets,
+            #         output_file=output_filepath,
+            #         reorient_nifti=True,
+            #     )
+            #     print(f"nifti written to `{output_filepath}`\n")
+            # except RuntimeError as err:
+            #     print(err)
 
         print("-" * 25)
 
