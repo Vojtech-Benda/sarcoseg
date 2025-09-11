@@ -122,7 +122,7 @@ def segment_ct(
             metric_results_list, Path(output_dir, ct_volume_path.parts[1])
         )
 
-    if collect_all_metric_results:
+    if collect_metric_results:
         collect_all_metric_results(output_dir)
 
 
