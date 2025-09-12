@@ -1,9 +1,12 @@
 import numpy as np
 from skimage.color import label2rgb
 import nibabel as nib
+from nibabel.nifti1 import Nifti1Image
 from pathlib import Path
 from numpy.typing import NDArray
 import imageio
+
+from src.classes import ImageData
 
 
 SPINE_COLORS = np.array(
@@ -23,16 +26,16 @@ LPI_ORNT = np.array([[0.0, -1.0], [1.0, -1.0], [2.0, -1.0]])  # from RAS to LPI
 
 
 def overlay_spine_mask(
-    spine_vol_path: Path,
-    spine_mask_path: Path,
+    ct_volume: Nifti1Image,
+    spine_mask: Nifti1Image,
     vert_body_centroid: NDArray,
     output_dir: Path,
 ):
     # reorient the volume to be in LPI directions for 2D plane
-    volumes = [
-        nib.as_closest_canonical(nib.load(path))
-        for path in (spine_vol_path, spine_mask_path)
-    ]
+    # volumes = [
+    #     nib.as_closest_canonical(nib.load(path))
+    #     for path in (spine_vol_path, spine_mask_path)
+    # ]
     # extract slice at vertebrae's body centroid and transpose to get the correct orientation on 2D plane
     # slices for each view list: [volume array, mask array]
     coronal = [
@@ -42,7 +45,7 @@ def overlay_spine_mask(
             .get_fdata(),
             axis=1,
         ).T
-        for vol in volumes
+        for vol in (ct_volume, spine_mask)
     ]
     sagittal = [
         np.squeeze(
@@ -51,7 +54,7 @@ def overlay_spine_mask(
             .get_fdata(),
             axis=0,
         ).T
-        for vol in volumes
+        for vol in (ct_volume, spine_mask)
     ]
 
     coronal[0] = normalize_hu(apply_ct_window(coronal[0], width=1000, level=400))
@@ -80,24 +83,26 @@ def overlay_spine_mask(
 
 
 def overlay_tissue_mask(
-    tissue_vol_path: Path,
-    tissue_mask_path: Path,
+    tissue_volume: Nifti1Image,
+    tissue_mask: Nifti1Image,
     output_dir: Path,
 ):
     # reorient slices into LPI direction for 2D plane
-    image = nib.as_closest_canonical(nib.load(tissue_vol_path)).as_reoriented(LPI_ORNT)
-    mask = nib.as_closest_canonical(nib.load(tissue_mask_path)).as_reoriented(LPI_ORNT)
+    tissue_volume = tissue_volume.as_reoriented(LPI_ORNT)
+    tissue_mask = tissue_mask.as_reoriented(LPI_ORNT)
 
     # tranpose array for the correct axis directions on 2D plane - right hand on left image side, anterior facing upwards
-    image, mask = [np.squeeze(img.get_fdata(), axis=-1).T for img in (image, mask)]
+    image_array, mask_array = [
+        np.squeeze(img.get_fdata(), axis=-1).T for img in (tissue_volume, tissue_mask)
+    ]
 
-    image = normalize_hu(apply_ct_window(image, width=600, level=150))
+    image_array = normalize_hu(apply_ct_window(image_array, width=600, level=150))
 
     try:
         overlay = (
             label2rgb(
-                label=mask,
-                image=image,
+                label=mask_array,
+                image=image_array,
                 colors=TISSUE_COLORS,
                 alpha=0.8,
                 bg_color=None,
@@ -107,9 +112,9 @@ def overlay_tissue_mask(
         ).astype(np.uint8)
 
         # filename = phase + "_" + "tissue_overlay.png"
-        fullpath = output_dir.joinpath("tissue_overlay.png")
+        output_filepath = output_dir.joinpath("tissue_overlay.png")
 
-        imageio.imsave(fullpath, overlay)
+        imageio.imsave(output_filepath, overlay)
     except RuntimeError as err:
         print(err)
 
