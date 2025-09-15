@@ -31,6 +31,12 @@ class StudyData:
 
 
 @dataclass
+class LabkeyData:
+    data: dict[str, Any] = field(default_factory=dict)
+    query_columns: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ImageData:
     image: Union[Nifti1Image, NDArray] = None
     spacing: NDArray = None

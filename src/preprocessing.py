@@ -12,7 +12,7 @@ from statistics import mean
 from datetime import datetime
 
 from src import database
-from src.classes import SeriesData, StudyData
+from src.classes import SeriesData, StudyData, LabkeyData
 
 
 SERIES_DESC_PATTERN = re.compile(
@@ -64,62 +64,60 @@ def preprocess_dicom(
         output_study_dir = Path(output_dir, study_data.study_inst_uid)
         output_study_dir.mkdir(exist_ok=True, parents=True)
 
-        write_dicom_tags(study_data, output_study_dir, query_labkey)
-
-        for series_data in study_data.series_dict.values():
-            print(
-                f"series instance uid `{series_data.series_inst_uid}`\n"
-                f"series description `{series_data.series_description}`\n"
-                f"contrast phase `{series_data.has_contrast}`, type `{series_data.contrast_phase}`"
+        if query_labkey:
+            labkey_data = database.query_patient_data(
+                study_data.patient_id,
+                query_columns=["PARTICIPANT", "VYSKA_PAC."],
+                max_rows=1,
             )
 
-            # dicom_datasets = [pydicom.dcmread(file) for file in series_data.filepaths]
+        write_dicom_tags(output_study_dir, study_data, labkey_data)
 
-            output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
-            output_series_dir.mkdir(exist_ok=True, parents=True)
-            output_filepath = output_series_dir.joinpath("input_volume.nii.gz")
-
-            tmp_dir = Path(output_study_dir, f"tmp_{series_data.series_inst_uid}")
-            tmp_dir.mkdir(exist_ok=True, parents=True)
-            [shutil.copy2(file, tmp_dir / file.name) for file in series_data.filepaths]
-
-            if output_filepath.exists():
-                print(
-                    f"overwriting existing input_volume.nii.gz at {str(output_filepath)}"
-                )
-
-            try:
-                args = [
-                    "-o",
-                    str(output_series_dir),
-                    "-f",
-                    "input_volume",
-                    "-z",
-                    "y",
-                    "-b",
-                    "n",
-                    "-w",
-                    "1",
-                    str(tmp_dir),
-                ]
-                returncode = dcm2niix.main(args, capture_output=True, text=True)
-                print(f"finished NifTI conversion with {returncode=}")
-                shutil.rmtree(tmp_dir)
-            except RuntimeError as err:
-                print(err)
-                print(f"finished NifTI conversion with {returncode=}")
-
-            # try:
-            #     dicom_array_to_nifti(
-            #         dicom_list=dicom_datasets,
-            #         output_file=output_filepath,
-            #         reorient_nifti=True,
-            #     )
-            #     print(f"nifti written to `{output_filepath}`\n")
-            # except RuntimeError as err:
-            #     print(err)
+        for series_data in study_data.series_dict.values():
+            write_series_as_nifti(output_study_dir, series_data)
 
         print("-" * 25)
+
+
+def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
+    print(
+        f"series instance uid `{series_data.series_inst_uid}`\n"
+        f"series description `{series_data.series_description}`\n"
+        f"contrast phase `{series_data.has_contrast}`, type `{series_data.contrast_phase}`"
+    )
+
+    output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
+    output_series_dir.mkdir(exist_ok=True, parents=True)
+    output_filepath = output_series_dir.joinpath("input_volume.nii.gz")
+
+    tmp_dir = Path(output_study_dir, f"tmp_{series_data.series_inst_uid}")
+    tmp_dir.mkdir(exist_ok=True, parents=True)
+    [shutil.copy2(file, tmp_dir / file.name) for file in series_data.filepaths]
+
+    if output_filepath.exists():
+        print(
+            f"overwriting existing input_volume.nii.gz at `{str(output_filepath.parent)}`"
+        )
+
+    try:
+        args = [
+            "-o",
+            str(output_series_dir),
+            "-f",
+            "input_volume",
+            "-z",
+            "y",
+            "-b",
+            "n",
+            "-w",
+            "1",
+            str(tmp_dir),
+        ]
+        returncode = dcm2niix.main(args, capture_output=True, text=True)
+        shutil.rmtree(tmp_dir)
+    except RuntimeError as err:
+        print(err)
+    print(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
@@ -166,7 +164,6 @@ def filter_dicom_files(
                 "SliceThickness",
             ],
         )
-        series_uid = ds.SeriesInstanceUID
 
         # filter out files in series matching pattern:
         # ("protocol", "topogram", "scout", "patient", "dose", "report"), ignoring case
@@ -183,6 +180,7 @@ def filter_dicom_files(
         if "DERIVED" in ds.ImageType:
             continue
 
+        series_uid = ds.SeriesInstanceUID
         if series_uid in files_by_uid:
             files_by_uid[series_uid].append(file)
         else:
@@ -326,14 +324,7 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(study: StudyData, study_dir: Path, query_labkey: bool = False):
-    labkey_data = None
-    labkey_columns = ["PARTICIPANT"]
-    if query_labkey:
-        labkey_data = database.query_patients(
-            columns=labkey_columns, patient_id=study.patient_id
-        )
-
+def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyData):
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
@@ -351,7 +342,12 @@ def write_dicom_tags(study: StudyData, study_dir: Path, query_labkey: bool = Fal
             "dose_length_product": series.dose_length_product,
         }
         if labkey_data:
-            row.update({col.lower(): labkey_data[col] for col in labkey_columns})
+            row.update(
+                {
+                    col.lower(): labkey_data.data[col]
+                    for col in labkey_data.query_columns
+                }
+            )
 
         rows.append(row)
 
@@ -373,9 +369,14 @@ def write_dicom_tags(study: StudyData, study_dir: Path, query_labkey: bool = Fal
     )
 
 
-def collect_all_study_tags(input_dir: Union[str, Path]):
+def collect_all_dicom_tags(
+    input_dir: Union[str, Path], output_dir: Union[str, Path] = None
+):
     if not isinstance(input_dir, Path):
         input_dir = Path(input_dir)
+
+    if not isinstance(output_dir, Path):
+        output_dir = Path(output_dir)
 
     dicom_tags_files = list(input_dir.rglob("dicom_tags.*"))
     df = pd.concat(
@@ -385,7 +386,7 @@ def collect_all_study_tags(input_dir: Union[str, Path]):
     )
 
     filepath = Path(
-        "./outputs",
+        output_dir if output_dir else input_dir,
         "all_dicom_tags_" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
     )
     df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
