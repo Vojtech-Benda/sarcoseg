@@ -167,7 +167,7 @@ if __name__ == "__main__":
         print("finished preprocessing DICOM series")
 
         if args.collect_dicom_tags:
-            preprocessing.collect_all_study_tags(args.output_dir)
+            preprocessing.collect_all_dicom_tags(args.output_dir)
 
     elif args.command == "segment":
         if args.slices_num != 0 and args.slices_num < 2:
