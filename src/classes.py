@@ -7,6 +7,30 @@ import pandas as pd
 
 
 @dataclass
+class SeriesData:
+    series_inst_uid: str = None
+    series_description: str = None
+    filepaths: list[Path] = None
+    num_of_filepaths: int = None
+    slice_thickness: float = None
+    has_contrast: str = None
+    contrast_phase: str = None
+    kilo_voltage_peak: float = None
+    mean_tube_current: float = None
+    irradiation_event_uid: str = None
+    mean_ctdi_vol: float = None
+    dose_length_product: float = None
+
+
+@dataclass
+class StudyData:
+    patient_id: str = None
+    study_inst_uid: str = None
+    study_date: str = None
+    series_dict: dict[str, SeriesData] = None
+
+
+@dataclass
 class ImageData:
     image: Union[Nifti1Image, NDArray] = None
     spacing: NDArray = None

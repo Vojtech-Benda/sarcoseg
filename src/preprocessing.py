@@ -4,7 +4,6 @@ import shutil
 
 from pathlib import Path
 from typing import Any, Union
-from dataclasses import dataclass
 
 import pandas as pd
 import pydicom
@@ -13,6 +12,7 @@ from statistics import mean
 from datetime import datetime
 
 from src import database
+from src.classes import SeriesData, StudyData
 
 
 SERIES_DESC_PATTERN = re.compile(
@@ -26,35 +26,15 @@ CONTRAST_PHASES_PATTERN = re.compile(
 )
 
 
-@dataclass
-class SeriesData:
-    series_inst_uid: str = None
-    series_description: str = None
-    filepaths: list[Path] = None
-    num_of_filepaths: int = None
-    slice_thickness: float = None
-    has_contrast: str = None
-    contrast_phase: str = None
-    kilo_voltage_peak: float = None
-    mean_tube_current: float = None
-    irradiation_event_uid: str = None
-    mean_ctdi_vol: float = None
-    dose_length_product: float = None
-
-
-@dataclass
-class StudyData:
-    patient_id: str = None
-    study_inst_uid: str = None
-    study_date: str = None
-    series_dict: dict[str, SeriesData] = None
-
-
 def preprocess_dicom(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = "./inputs",
     query_labkey: bool = False,
 ):
+    if query_labkey:
+        if not database.is_labkey_reachable(verbose=True):
+            sys.exit(-1)
+
     print("preprocessing DICOM files")
 
     if not isinstance(input_dir, Path):

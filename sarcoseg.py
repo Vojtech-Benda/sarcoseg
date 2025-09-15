@@ -4,7 +4,6 @@ import argparse
 from src import preprocessing
 from src import segmentation
 from src.setup_project import setup_project
-from src.database import is_labkey_reachable
 
 
 def get_args():
@@ -162,10 +161,6 @@ if __name__ == "__main__":
     args = get_args()
 
     if args.command == "preprocess":
-        if args.query_labkey:
-            if not is_labkey_reachable(verbose=True):
-                sys.exit(-1)
-
         preprocessing.preprocess_dicom(
             args.input_dir, args.output_dir, query_labkey=args.query_labkey
         )
