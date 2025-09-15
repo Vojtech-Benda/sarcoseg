@@ -1,4 +1,4 @@
-from typing import Union, Any
+from typing import Union
 from pathlib import Path
 from time import perf_counter
 from datetime import datetime
@@ -10,10 +10,10 @@ import nibabel as nib
 from numpy import nan
 from nnunet.inference.predict import predict_cases
 
-from src import segmentation
 from src import visualization
 from src import utils
 from src.utils import DEFAULT_VERTEBRA_CLASSES
+from src.classes import ImageData, MetricsData
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
@@ -33,21 +33,29 @@ def segment_ct(
     output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     output_dir.mkdir()
     for case_dir in case_dirs:
-        ct_volume_paths = list(case_dir.rglob("*/*.nii.gz"))
+        ct_volume_files = list(case_dir.rglob("*.nii.gz"))
+
         df_tags = pd.read_csv(
             Path(case_dir, "dicom_tags.csv"),
             index_col=False,
             header=0,
-            usecols=["participant", "patient_id", "study_inst_uid", "series_inst_uid"],
+            usecols=[
+                "participant",
+                "patient_id",
+                "study_inst_uid",
+                "series_inst_uid",
+                "contrast_phase",
+            ],
         )
-        print("\n" + "-" * 25)
+
+        print("-" * 25)
         print(
-            f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
+            f"\nfound {len(ct_volume_files)} volumes to segment spine for case {case_dir.name}"
         )
 
-        metric_results_list: list[dict[str, Any]] = []
+        metric_results_list: list[MetricsData] = []
 
-        for ct_volume_path in ct_volume_paths:
+        for ct_volume_path in ct_volume_files:
             # construct output path from [input_dir, study_inst_uid, series_inst_uid, file]
             case_output_dir = Path(output_dir, *ct_volume_path.parts[1:-1])
             case_images_dir = case_output_dir.joinpath("images")
@@ -56,65 +64,53 @@ def segment_ct(
 
             shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
 
-            spine_results = segmentation.segment_spine(
-                ct_volume_path,
+            input_volume_data: ImageData = utils.read_volume(ct_volume_path)
+
+            spine_mask_data, spine_duration = segment_spine(
+                ct_volume_path, case_output_dir
+            )
+
+            tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
+                input_volume_data.image,
+                spine_mask_data.image,
                 case_output_dir,
+                slices_num,
             )
 
-            spine_mask = (
-                spine_results["spine_mask"]
-                if "spine_mask" in spine_results
-                else spine_results["spine_mask_path"]
+            tissue_mask_data, tissue_duration = segment_tissues(
+                tissue_volume_data.path, case_output_dir
             )
 
-            slice_results = utils.extract_slices(
-                ct_volume_path, case_output_dir, spine_mask, slices_num
+            processed_data, postproc_duration = utils.postprocess_tissue_masks(
+                tissue_mask_data,
+                tissue_volume_data,
             )
 
-            tissue_results = segmentation.segment_tissues(
-                slice_results["sliced_volume_path"], case_output_dir
-            )
-
-            postproc_results = utils.postprocess_tissue_masks(
-                tissue_results["mask"],
-                tissue_results["volume"],
-                tissue_results["mask_filepath"],
-            )
-
-            metric_results = utils.compute_metrics(
-                postproc_results["processed_mask"],
-                tissue_results["volume"],
+            metrics_results = utils.compute_metrics(
+                processed_data,
+                tissue_volume_data,
                 metrics=additional_metrics,
-                spacing=tissue_results["spacing"],
             )
 
-            duration = (
-                spine_results["duration"]
-                + slice_results["duration"]
-                + tissue_results["duration"]
-                + postproc_results["duration"]
+            series_inst_uid = ct_volume_path.parent.parts[-1]
+            metrics_results.set_patient_data(df_tags, series_inst_uid)
+            metrics_results.set_duration(
+                spine_duration, tissue_duration, extraction_duration, postproc_duration
             )
-
-            study_inst_uid, series_inst_uid = ct_volume_path.parts[1:-1]
-            metric_results["participant"] = df_tags.loc[
-                df_tags["series_inst_uid"] == series_inst_uid
-            ]["participant"].item()
-            metric_results["study_inst_uid"] = study_inst_uid
-            metric_results["series_inst_uid"] = series_inst_uid
-            metric_results["duration"] = duration
-            metric_results_list.append(metric_results)
+            metrics_results.centroids = centroids
+            metric_results_list.append(metrics_results)
 
             if save_mask_overlays:
                 visualization.overlay_spine_mask(
-                    ct_volume_path,
-                    spine_results["spine_mask_path"],
-                    slice_results["vert_centroid"],
+                    input_volume_data.image,
+                    spine_mask_data.image,
+                    centroids.vertebre_centroid,
                     output_dir=case_images_dir,
                 )
 
                 visualization.overlay_tissue_mask(
-                    slice_results["sliced_volume_path"],
-                    tissue_results["mask_filepath"],
+                    tissue_volume_data.image,
+                    tissue_mask_data.image,
                     output_dir=case_images_dir,
                 )
 
@@ -122,35 +118,41 @@ def segment_ct(
             metric_results_list, Path(output_dir, ct_volume_path.parts[1])
         )
 
-    if collect_metric_results:
-        collect_all_metric_results(output_dir)
+    # if collect_metric_results:
+    #     collect_all_metric_results(output_dir)
 
 
 def segment_spine(
     input_nifti_path: Union[str, Path],
     output_dir: Union[str, Path] = None,
-    vert_classes: list = None,
+    vert_classes: list[str] = None,
     overwrite_output: bool = False,
-) -> dict:
+) -> tuple[ImageData, float]:
     """
-    Segment spine vertebrae.
+    Segment spine vertebrae. Skips segmentation if a spine_mask.nii.gz file exists.
 
     Args:
-        input_nifti_path (Union[str, Path]): path to nifti file
-        output_dir (Union[str, Path], optional): directory to store segmentation mask. Defaults to "./".
+        input_nifti_path (Union[str, Path]): path to nifti file.
+        output_dir (Union[str, Path], optional): directory to store segmentation mask.
+            Defaults to "./".
+        vert_classes (list[str]): vertebrae class names in TotalSegmentator's task `total`.
+            For class details see https://github.com/wasserth/TotalSegmentator?tab=readme-ov-file#class-details.
 
     Returns:
-        spine_results (dict): spine segmentation results
+        spine_mask (nib.Nifti1Image):
+            Spine segmentation mask.
+
+        spine_mask_path (Path):
+            Path to spine segmentation mask nifti file.
+
+        duration (float):
+            Segmentation runtime, defaults to 0.0 if segmentation file exists.
     """
 
     if not isinstance(output_dir, Path):
         output_dir = Path(output_dir)
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
-
-    if spine_mask_path.exists() and not overwrite_output:
-        print(f"file '{spine_mask_path}' exists, skipping spine segmentation")
-        return {"spine_mask_path": spine_mask_path, "duration": 0.0}
 
     print(f"\nsegmenting vertebrae for {input_nifti_path.name}")
 
@@ -159,7 +161,7 @@ def segment_spine(
         print(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
-    spine_mask: nib.nifti1.Nifti1Image = totalsegmentator(
+    spine_mask: nib.Nifti1Image = totalsegmentator(
         input_nifti_path,
         spine_mask_path,
         fast=False,
@@ -173,18 +175,14 @@ def segment_spine(
     duration = perf_counter() - start
     print(f"spine segmentation finised in {duration:.2f} seconds")
 
-    spine_mask = nib.funcs.as_closest_canonical(spine_mask)
-
-    return {
-        "spine_mask": spine_mask,
-        "spine_mask_path": spine_mask_path,
-        "duration": duration,
-    }
+    spine_mask = nib.as_closest_canonical(spine_mask)
+    spacing = spine_mask.header.get_zooms()
+    return ImageData(image=spine_mask, path=spine_mask_path, spacing=spacing), duration
 
 
 def segment_tissues(
     tissue_volume_path: Union[Path, str], case_output_dir: Union[Path, str]
-):
+) -> tuple[ImageData, float]:
     if not isinstance(case_output_dir, Path):
         case_output_dir = Path(case_output_dir)
 
@@ -215,40 +213,15 @@ def segment_tissues(
     duration = perf_counter() - start
     print(f"tissue segmentation finished in {duration}")
 
-    mask = nib.as_closest_canonical(nib.load(output_filepath))
-    volume = nib.as_closest_canonical(nib.load(tissue_volume_path))
-    spacing = volume.header.get_zooms()
-
-    return {
-        "volume": volume,
-        "mask": mask,
-        "mask_filepath": output_filepath,
-        "spacing": spacing,
-        "duration": duration,
-    }
+    tissue_mask: ImageData = utils.read_volume(output_filepath)
+    return tissue_mask, duration
 
 
-def write_metric_results(metric_results: list[dict[str, Any]], output_study_dir: Path):
-    rows: list[dict[str, Any]] = []
-    for res in metric_results:
-        rows.append(
-            {
-                "participant": res["participant"],
-                "study_inst_uid": res["study_inst_uid"],
-                "series_inst_uid": res["series_inst_uid"],
-                "muscle_area": res["area"]["muscle"],
-                "muscle_mean_hu": res["mean_hu"]["muscle"],
-                "sat_area": res["area"]["sat"],
-                "sat_mean_hu": res["mean_hu"]["sat"],
-                "vat_area": res["area"]["vat"],
-                "vat_mean_hu": res["mean_hu"]["vat"],
-                "imat_area": res["area"]["imat"],
-                "imat_mean_hu": res["mean_hu"]["imat"],
-                "duration": res["duration"],
-            }
-        )
+def write_metric_results(metric_results: list[MetricsData], output_study_dir: Path):
+    # rows: list[dict[str, Any]] = []
+    # for data in metric_results:
 
-    df = pd.DataFrame(rows, columns=rows[0].keys())
+    df = pd.DataFrame([result.to_dict() for result in metric_results])
     filepath = output_study_dir.joinpath("metric_results.csv")
     if filepath.exists():
         print(f"overwriting existing metric_results.csv at `{filepath}`")
