@@ -1,4 +1,4 @@
-from typing import Union, Any
+from typing import Union
 from pathlib import Path
 from time import perf_counter
 from datetime import datetime
@@ -18,24 +18,6 @@ from src.classes import ImageData, MetricsData
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
-# @dataclass
-# class ImageData:
-#     image: nib.Nifti1Image = None
-#     spacing: NDArray = None
-#     path: Path = None
-
-
-# @dataclass
-# class SegmentationResults:
-#     input_volume_data: ImageData = None
-#     spine_mask_data: ImageData = None
-#     tissue_volume_data: ImageData = None
-#     segmentation_time: float = 0.0
-
-#     def sum_durations(self, *args: float):
-#         self.segmentation_time = sum(args)
-
-
 def segment_ct(
     input_dir: str,
     output_dir: str,
@@ -51,8 +33,6 @@ def segment_ct(
     output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     output_dir.mkdir()
     for case_dir in case_dirs:
-        # ct_volume_paths = list(case_dir.rglob("*/*.nii.gz"))
-        # seg_results = SegmentationResults()
         ct_volume_files = list(case_dir.rglob("*.nii.gz"))
 
         df_tags = pd.read_csv(
@@ -67,16 +47,7 @@ def segment_ct(
                 "contrast_phase",
             ],
         )
-        # seg_results.df_tags = pd.read_csv(
-        #     Path(case_dir, "dicom_tags.csv"),
-        #     index_col=False,
-        #     header=0,
-        # )
 
-        # print("\n" + "-" * 25)
-        # print(
-        #     f"\nfound {len(ct_volume_paths)} volumes to segment spine for case {case_dir.name}"
-        # )
         print("-" * 25)
         print(
             f"\nfound {len(ct_volume_files)} volumes to segment spine for case {case_dir.name}"
@@ -90,7 +61,6 @@ def segment_ct(
             case_images_dir = case_output_dir.joinpath("images")
             case_output_dir.mkdir(exist_ok=True, parents=True)
             case_images_dir.mkdir(exist_ok=True)
-            # seg_results.paths["case_output_dir"] = case_output_dir
 
             shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
 
@@ -99,12 +69,6 @@ def segment_ct(
             spine_mask_data, spine_duration = segment_spine(
                 ct_volume_path, case_output_dir
             )
-
-            # spine_mask = (
-            #     spine_results["spine_mask"]
-            #     if "spine_mask" in spine_results
-            #     else spine_results["spine_mask_path"]
-            # )
 
             tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
                 input_volume_data.image,
@@ -128,25 +92,12 @@ def segment_ct(
                 metrics=additional_metrics,
             )
 
-            # duration = (
-            #     spine_results["duration"]
-            #     + slice_results["duration"]
-            #     + tissue_results["duration"]
-            #     + postproc_results["duration"]
-            # )
-
             series_inst_uid = ct_volume_path.parent.parts[-1]
             metrics_results.set_patient_data(df_tags, series_inst_uid)
             metrics_results.set_duration(
                 spine_duration, tissue_duration, extraction_duration, postproc_duration
             )
             metrics_results.centroids = centroids
-            # metric_results["participant"] = df_tags.loc[
-            #     df_tags["series_inst_uid"] == series_inst_uid
-            # ]["participant"].item()
-            # metric_results["study_inst_uid"] = study_inst_uid
-            # metric_results["series_inst_uid"] = series_inst_uid
-            # metric_results["duration"] = duration
             metric_results_list.append(metrics_results)
 
             if save_mask_overlays:
@@ -167,8 +118,8 @@ def segment_ct(
             metric_results_list, Path(output_dir, ct_volume_path.parts[1])
         )
 
-    if collect_metric_results:
-        collect_all_metric_results(output_dir)
+    # if collect_metric_results:
+    #     collect_all_metric_results(output_dir)
 
 
 def segment_spine(
