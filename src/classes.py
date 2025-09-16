@@ -51,9 +51,11 @@ class Centroids:
 
 @dataclass
 class MetricsData:
+    patient_data: dict[str, Any] = field(default_factory=dict)
+
     area: dict[str, Any] = field(default_factory=dict)
     mean_hu: dict[str, Any] = field(default_factory=dict)
-    patient_data: dict[str, Any] = field(default_factory=dict)
+    skelet_muscle_index: float = None
 
     duration: float = None
     centroids: Centroids = None
@@ -65,14 +67,15 @@ class MetricsData:
             .to_dict()
         )
 
-    def to_dict(self):
+    def _to_dict(self):
         row = {}
         row.update(self.patient_data)
         row.update({f"area_{k}": v for k, v in self.area.items()})
         row.update({f"mean_hu_{k}": v for k, v in self.mean_hu.items()})
+        row["skelet_muscle_index"] = self.skelet_muscle_index
         row["duration"] = self.duration
-        row["vertebra_centroid_height"] = self.centroids.vertebre_centroid[-1]
-        row["vertebra_body_centroid_height"] = self.centroids.body_centroid[-1]
+        row["vertebra_centroid_slice"] = self.centroids.vertebre_centroid[-1]
+        row["vertebra_body_centroid_slice"] = self.centroids.body_centroid[-1]
         return row
 
     def set_duration(self, *durations):

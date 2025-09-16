@@ -21,7 +21,6 @@ MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 def segment_ct(
     input_dir: str,
     output_dir: str,
-    additional_metrics: list,
     slices_num: int = 0,
     save_segmentations: bool = False,
     save_mask_overlays: bool = False,
@@ -35,37 +34,40 @@ def segment_ct(
     for case_dir in case_dirs:
         ct_volume_files = list(case_dir.rglob("*.nii.gz"))
 
+        usecols = [
+            "participant",
+            "patient_id",
+            "study_inst_uid",
+            "series_inst_uid",
+            "contrast_phase",
+            "vyska_pac.",
+        ]
         df_tags = pd.read_csv(
             Path(case_dir, "dicom_tags.csv"),
             index_col=False,
             header=0,
-            usecols=[
-                "participant",
-                "patient_id",
-                "study_inst_uid",
-                "series_inst_uid",
-                "contrast_phase",
-            ],
+            usecols=lambda col: col in usecols,
+            dtype={"patient_id": str, "vyska_pac.": float},
         )
 
         print("-" * 25)
         print(
-            f"\nfound {len(ct_volume_files)} volumes to segment spine for case {case_dir.name}"
+            f"\nfound {len(ct_volume_files)} volumes to segment spine for case `{case_dir.name}`"
         )
 
         metric_results_list: list[MetricsData] = []
 
         for ct_volume_path in ct_volume_files:
-            # construct output path from [input_dir, study_inst_uid, series_inst_uid, file]
-            case_output_dir = Path(output_dir, *ct_volume_path.parts[1:-1])
-            case_images_dir = case_output_dir.joinpath("images")
+            # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
+            case_output_dir = Path(output_dir, *ct_volume_path.parent.parts[-2:])
             case_output_dir.mkdir(exist_ok=True, parents=True)
-            case_images_dir.mkdir(exist_ok=True)
 
             shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
 
             input_volume_data: ImageData = utils.read_volume(ct_volume_path)
 
+            series_inst_uid = case_output_dir.parts[-1]
+            print(f"running segmentation on `{series_inst_uid}`")
             spine_mask_data, spine_duration = segment_spine(
                 ct_volume_path, case_output_dir
             )
@@ -86,13 +88,13 @@ def segment_ct(
                 tissue_volume_data,
             )
 
+            series_tags = utils.get_series_tags(df_tags, series_inst_uid)
             metrics_results = utils.compute_metrics(
                 processed_data,
                 tissue_volume_data,
-                metrics=additional_metrics,
+                series_df_tags=series_tags,
             )
 
-            series_inst_uid = ct_volume_path.parent.parts[-1]
             metrics_results.set_patient_data(df_tags, series_inst_uid)
             metrics_results.set_duration(
                 spine_duration, tissue_duration, extraction_duration, postproc_duration
@@ -101,6 +103,8 @@ def segment_ct(
             metric_results_list.append(metrics_results)
 
             if save_mask_overlays:
+                case_images_dir = case_output_dir.joinpath("images")
+                case_images_dir.mkdir(exist_ok=True)
                 visualization.overlay_spine_mask(
                     input_volume_data.image,
                     spine_mask_data.image,
@@ -115,11 +119,11 @@ def segment_ct(
                 )
 
         write_metric_results(
-            metric_results_list, Path(output_dir, ct_volume_path.parts[1])
+            metric_results_list, Path(output_dir, case_output_dir.parts[-2])
         )
 
-    # if collect_metric_results:
-    #     collect_all_metric_results(output_dir)
+    if collect_metric_results:
+        collect_all_metric_results(output_dir)
 
 
 def segment_spine(
@@ -218,10 +222,7 @@ def segment_tissues(
 
 
 def write_metric_results(metric_results: list[MetricsData], output_study_dir: Path):
-    # rows: list[dict[str, Any]] = []
-    # for data in metric_results:
-
-    df = pd.DataFrame([result.to_dict() for result in metric_results])
+    df = pd.DataFrame([result._to_dict() for result in metric_results])
     filepath = output_study_dir.joinpath("metric_results.csv")
     if filepath.exists():
         print(f"overwriting existing metric_results.csv at `{filepath}`")
@@ -234,16 +235,15 @@ def collect_all_metric_results(input_dir: Union[str, Path]):
 
     metrics_files = list(input_dir.rglob("metric_results.csv"))
     df = pd.concat(
-        (pd.read_csv(file, index_col=None, header=0) for file in metrics_files),
+        (
+            pd.read_csv(file, index_col=None, header=0, dtype={"patient_id": str})
+            for file in metrics_files
+        ),
         axis=0,
         ignore_index=True,
     )
 
-    filepath = Path(
-        "./outputs",
-        input_dir,
-        "all_metric_results.csv",
-    )
+    filepath = Path(input_dir, "all_metric_results.csv")
     df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
     print(
         f"written all metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"

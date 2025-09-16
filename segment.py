@@ -7,7 +7,7 @@ from src import segmentation
 def get_args():
     parser = argparse.ArgumentParser(
         prog="segment",
-        description="segmentation of spine vertebrae. Segmetnation of muscle, fat tissues at L3 vertebra in axial view",
+        description="Segmentation of spine vertebrae. Segmetnation of muscle, fat tissues at L3 vertebra in axial view.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -34,14 +34,14 @@ def get_args():
         ),
         default=0,
     )
-    parser.add_argument(
-        "-am",
-        "--additional-metrics",
-        nargs="+",
-        help="space separated list of additional metrics to compute, see docs or run segment.py --help-metrics for description",
-        metavar="metrics",
-        choices=("smi"),
-    )
+    # parser.add_argument(
+    #     "-am",
+    #     "--additional-metrics",
+    #     nargs="+",
+    #     help="space separated list of additional metrics to compute, see docs or run segment.py --help-metrics for description",
+    #     metavar="metrics",
+    #     choices=("smi"),
+    # )
     parser.add_argument(
         "--save-segmentations",
         action="store_true",
@@ -54,6 +54,12 @@ def get_args():
         help="save overlayed segmentation masks",
         default=False,
     )
+    parser.add_argument(
+        "--collect-metric-results",
+        action="store_true",
+        help="collect all metric_results.csv into one .csv file",
+        default=False,
+    )
     return parser.parse_args()
 
 
@@ -63,7 +69,7 @@ def check_slices_num_value(arg):
         raise ValueError(f"argument {arg=} must be greater or equal 0")
 
 
-if __name__ == "__main":
+if __name__ == "__main__":
     args = get_args()
 
     check_slices_num_value(args.slices_num)
@@ -72,8 +78,8 @@ if __name__ == "__main":
         args.input_dir,
         args.output_dir,
         slices_num=args.slices_num,
-        additional_metrics=args.additional_metrics,
         save_segmentations=args.save_segmentations,
         save_mask_overlays=args.save_mask_overlays,
+        collect_metric_results=args.collect_metric_results,
     )
     print("finished CT segmentation")

@@ -1,13 +1,13 @@
 import nibabel as nib
 import numpy as np
 import skimage as sk
+import pandas as pd
 
 from time import perf_counter
 from pathlib import Path
-from typing import Union
+from typing import Union, Any
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
-
 from src.classes import ImageData, MetricsData, Centroids
 
 
@@ -95,7 +95,7 @@ def extract_slices(
     spine_mask: Union[Nifti1Image, Path, str],
     output_dir: Union[Path, str],
     slices_num: int = 0,
-) -> tuple[ImageData, dict[str, NDArray], float]:
+) -> tuple[ImageData, Centroids, float]:
     """
     Extract axial slices from input CT volume at vertebrae body's centroid.
 
@@ -176,10 +176,9 @@ def extract_slices(
     duration = perf_counter() - start
     print(f"slice extraction finished in {duration} seconds")
 
-    centroids = Centroids(vertebre_centroid=vert_centroid, body_centroid=body_centroid)
     return (
         ImageData(image=sliced_volume, path=output_filepath),
-        centroids,
+        Centroids(vertebre_centroid=vert_centroid, body_centroid=body_centroid),
         duration,
     )
 
@@ -239,8 +238,7 @@ def postprocess_tissue_masks(
 def compute_metrics(
     tissue_mask_data: ImageData,
     tissue_volume_data: ImageData,
-    metrics: list,
-    spacing: Union[list[float], tuple[float], NDArray] = None,
+    series_df_tags: dict[str, Any] = None,
 ):
     if tissue_mask_data.spacing:
         spacing = tissue_mask_data.spacing
@@ -265,18 +263,28 @@ def compute_metrics(
 
     tissue_arr = tissue_volume_data.image.get_fdata()
 
-    area = {
+    metrics_data = MetricsData()
+    metrics_data.area = {
         tissue: np.count_nonzero(mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)])
         * pixel_size
         for tissue in TISSUE_LABEL_INDEX
     }
-    mean_hu = {
+    metrics_data.mean_hu = {
         tissue: np.mean(tissue_arr[mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)]])
         for tissue in TISSUE_LABEL_INDEX
     }
 
-    # metrics_results = MetricsData(area=area, mean_hu=mean_hu)
-    return MetricsData(area=area, mean_hu=mean_hu)
+    patient_height = series_df_tags.get("vyska_pac.", None)
+    if patient_height:
+        # skeletal muscle index (cm^2 / m^2) = muscle area (cm^2) / patient height (m^2)
+        metrics_data.skelet_muscle_index = metrics_data.area["muscle"] / (
+            (patient_height / 100.0) ** 2
+        )
+    return metrics_data
+
+
+def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
+    return df_tags.loc[df_tags["series_inst_uid"] == series_inst_uid].iloc[0].to_dict()
 
 
 def read_volume(path: Path):

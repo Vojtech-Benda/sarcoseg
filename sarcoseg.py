@@ -74,12 +74,12 @@ def get_args():
         ),
         default=0,
     )
-    segment_parser.add_argument(
-        "--add-metrics",
-        nargs="+",
-        help="space separated list of additional metrics to compute",
-        metavar="metrics",
-    )
+    # segment_parser.add_argument(
+    #     "--add-metrics",
+    #     nargs="+",
+    #     help="space separated list of additional metrics to compute",
+    #     metavar="metrics",
+    # )
     segment_parser.add_argument(
         "--save-segmentations",
         action="store_true",
