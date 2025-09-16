@@ -1,3 +1,4 @@
+import argparse
 import os
 from zipfile import ZipFile
 from pathlib import Path
@@ -8,10 +9,10 @@ from totalsegmentator.python_api import download_pretrained_weights
 def setup_project(
     input_dir: str = "./inputs",
     output_dir: str = "./outputs",
-    model_dir: str = "./models",
-    model_name: str = "model_name",
     remove_model_zip: bool = False,
 ):
+    model_dir = "./models"
+    model_name = "muscle_fat_tissue_0_0_2"
     for d in (input_dir, output_dir, model_dir):
         if os.path.exists(d):
             print(f"directory `{d}` exists")
@@ -53,3 +54,40 @@ def setup_project(
     print("downloading TotalSegmentator models")
     for tid in task_ids:
         download_pretrained_weights(tid)
+
+
+def get_args():
+    parser = argparse.ArgumentParser(
+        prog="setup_project",
+        description="create directories, download models, etc.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "-i",
+        "--input-dir",
+        help="path to input directory",
+        type=str,
+        default="./inputs",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        help="path to output directory",
+        type=str,
+        default="./outputs",
+    )
+    parser.add_argument(
+        "--remove-model-zip",
+        action="store_true",
+        help="remove downloaded huggingface model ZIP file",
+        default=False,
+    )
+
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = get_args()
+    setup_project(
+        args.input_dir, args.output_dir, remove_model_zip=args.remove_model_zip
+    )
