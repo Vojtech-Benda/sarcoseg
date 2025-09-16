@@ -215,6 +215,7 @@ def select_series_to_segment(
         series_desc: str = dataset.SeriesDescription
 
         contrast_applied = dataset.get("ContrastBolusAgent", None)
+        convolution_kernel = dataset.get("ConvolutionKernel", None)
 
         series_data = SeriesData(
             series_inst_uid=series_uid,
@@ -223,7 +224,10 @@ def select_series_to_segment(
             filepaths=filepaths,
             num_of_filepaths=len(filepaths),
             has_contrast="yes" if contrast_applied else "no",
-            irradiation_event_uid=dataset.get("IrradiationEventUID", "none"),
+            irradiation_event_uid=dataset.get("IrradiationEventUID", "unknown"),
+            convolution_kernel=convolution_kernel[0]
+            if convolution_kernel
+            else "uknown",
         )
 
         contrast_match = CONTRAST_PHASES_PATTERN.search(series_desc)

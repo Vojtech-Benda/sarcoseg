@@ -13,6 +13,7 @@ class SeriesData:
     filepaths: list[Path] = None
     num_of_filepaths: int = None
     slice_thickness: float = None
+    convolution_kernel: str = None
     has_contrast: str = None
     contrast_phase: str = None
     kilo_voltage_peak: float = None
