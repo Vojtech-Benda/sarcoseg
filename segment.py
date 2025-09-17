@@ -42,12 +42,12 @@ def get_args():
     #     metavar="metrics",
     #     choices=("smi"),
     # )
-    parser.add_argument(
-        "--save-segmentations",
-        action="store_true",
-        help="save segmentation masks",
-        default=False,
-    )
+    # parser.add_argument(
+    #     "--save-segmentations",
+    #     action="store_true",
+    #     help="save segmentation masks",
+    #     default=False,
+    # )
     parser.add_argument(
         "--save-mask-overlays",
         action="store_true",
@@ -78,7 +78,6 @@ if __name__ == "__main__":
         args.input_dir,
         args.output_dir,
         slices_num=args.slices_num,
-        save_segmentations=args.save_segmentations,
         save_mask_overlays=args.save_mask_overlays,
         collect_metric_results=args.collect_metric_results,
     )

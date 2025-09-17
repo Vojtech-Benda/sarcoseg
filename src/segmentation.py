@@ -22,7 +22,6 @@ def segment_ct(
     input_dir: str,
     output_dir: str,
     slices_num: int = 0,
-    save_segmentations: bool = False,
     save_mask_overlays: bool = False,
     collect_metric_results: bool = False,
 ):
