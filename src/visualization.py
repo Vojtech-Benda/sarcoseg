@@ -21,6 +21,14 @@ SPINE_COLORS = np.array(
 )
 
 TISSUE_COLORS = ["khaki", "lightgreen", "dodgerblue", "lightcoral"]
+TISSUE_COLORS_2 = np.array(
+    [
+        [0.965, 0.745, 0.506],
+        [0.549, 0.773, 0.520],
+        [0.604, 0.530, 0.878],
+        [1.000, 0.533, 0.522],
+    ]
+)
 
 LPI_ORNT = np.array([[0.0, -1.0], [1.0, -1.0], [2.0, -1.0]])  # from RAS to LPI
 
