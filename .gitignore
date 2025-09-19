@@ -7,7 +7,7 @@ outputs/
 .venv-test/
 src/fnosarcoseg.egg-info/
 build/
-
+tests/
 models/
 
 # ide dirs
