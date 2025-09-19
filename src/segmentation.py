@@ -113,7 +113,7 @@ def segment_ct(
 
                 visualization.overlay_tissue_mask(
                     tissue_volume_data.image,
-                    tissue_mask_data.image,
+                    processed_data.image,
                     output_dir=case_images_dir,
                 )
 

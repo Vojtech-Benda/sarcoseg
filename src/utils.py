@@ -223,16 +223,19 @@ def postprocess_tissue_masks(
     # squeeze processed labels of shape H x W x D x L -> H x W x D
     out_nifti = np.zeros(processed_mask.shape[:-1], dtype=np.uint8)
 
-    for i in range(processed_mask.shape[-1]):
-        out_nifti[processed_mask[..., i] == 1] = i + 1
+    for i, label in enumerate(DEFAULT_TISSUE_CLASSES.values()):
+        out_nifti[processed_mask[..., i]] = label
     out_nifti = nib.as_closest_canonical(
         nib.Nifti1Image(out_nifti, mask_data.image.affine)
     )
-    nib.save(out_nifti, mask_data.path)  # overwrite segmented image
+    processed_mask_path = mask_data.path.parent.joinpath("tissue_mask_pp.nii.gz")
+    nib.save(out_nifti, processed_mask_path)  # overwrite segmented image
 
     duration = perf_counter() - start
     print(f"tissue postprocessing finished in {duration:.2f} second")
-    return ImageData(image=processed_mask, spacing=mask_data.spacing), duration
+    return ImageData(
+        image=out_nifti, spacing=mask_data.spacing, path=processed_mask_path
+    ), duration
 
 
 def compute_metrics(
@@ -249,29 +252,28 @@ def compute_metrics(
     if spacing is None:
         spacing = (1.0, 1.0, 1.0)
 
-    mask_arr = tissue_mask_data.image
-    if len(mask_arr.shape[:-1]) != len(spacing):
-        raise ValueError(
-            f"array shape {mask_arr.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
-        )
+    mask_arr = tissue_mask_data.image.get_fdata()
+    # if len(mask_arr.shape[:-1]) != len(spacing):
+    #     raise ValueError(
+    #         f"array shape {mask_arr.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
+    #     )
 
-    mask_shape = mask_arr.shape[:-1]  # get image size only
-    if mask_shape[-1] == 1:
+    depth = mask_arr.shape[-1]  # get image size only
+    if depth == 1:
         pixel_size = np.prod(spacing[:2]) / 100.0  # pixel size is in cm^2
-    elif mask_shape[-1] > 1:
+    elif depth > 1:
         pixel_size = np.prod(spacing) / 10000.0  # pixel size is in cm^3
 
     tissue_arr = tissue_volume_data.image.get_fdata()
 
     metrics_data = MetricsData()
     metrics_data.area = {
-        tissue: np.count_nonzero(mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)])
-        * pixel_size
-        for tissue in TISSUE_LABEL_INDEX
+        tissue: np.count_nonzero(mask_arr == label) * pixel_size
+        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
     metrics_data.mean_hu = {
-        tissue: np.mean(tissue_arr[mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)]])
-        for tissue in TISSUE_LABEL_INDEX
+        tissue: np.mean(tissue_arr[mask_arr == label])
+        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
     patient_height = series_df_tags.get("vyska_pac.", None)
