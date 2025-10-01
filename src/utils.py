@@ -289,7 +289,7 @@ def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
     return df_tags.loc[df_tags["series_inst_uid"] == series_inst_uid].iloc[0].to_dict()
 
 
-def read_volume(path: Path):
+def read_volume(path: Union[Path, str]):
     volume = nib.as_closest_canonical(nib.load(path))
     spacing = volume.header.get_zooms()
     return ImageData(image=volume, spacing=spacing, path=path)

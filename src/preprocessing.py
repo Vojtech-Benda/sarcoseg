@@ -30,7 +30,7 @@ def preprocess_dicom(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = "./inputs",
     query_labkey: bool = False,
-):
+) -> None:
     if query_labkey:
         if not database.is_labkey_reachable(verbose=True):
             sys.exit(-1)
@@ -124,17 +124,20 @@ def filter_dicom_files(
     dicom_files: list[Path],
 ) -> tuple[StudyData, dict[str, list[Path]], Path]:
     """
-    Sorts filepaths by DICOM tag SeriesInstanceUID.
+    Sorts filepaths by DICOM tag SeriesInstanceUID and removes (filters) out files matching these rules:
+    - SeriesDescription contains "protocol", "topogram", "scout", "patient", "dose", "report", "monitor"
+        - excluding dose report
+    - SliceThickness is None
+    - ImageType contains "DERIVED"
     Also returns fullpath of Dose report series if found.
 
     Args:
         dicom_files (list[Path]): List of dicom files, excluding DICOMDIR file.
 
     Returns:
-        tuple:
-            study_data StudyData: dataclass containing basic study metadata.\n
-            files_by_uid dict[str, list[Path]]: Dictionary mapping each SeriesInstanceUID to a list of filepaths.\n
-            dose_report_file Path: Path to Dose Report series file, if found, otherwise None.
+        StudyData: Dataclass containing basic study metadata.\n
+        dict[str, list[Path]]: Dictionary mapping each SeriesInstanceUID to a list of filepaths.\n
+        Path: Path to Dose Report series file, if found, otherwise None.
     """
 
     files_by_uid: dict[str, list[str]] = {}
@@ -165,12 +168,12 @@ def filter_dicom_files(
             ],
         )
 
-        # filter out files in series matching pattern:
-        # ("protocol", "topogram", "scout", "patient", "dose", "report"), ignoring case
         if "dose report" in ds.SeriesDescription.lower():
             dose_report_file = file
             continue
 
+        # filter out files in series matching pattern:
+        # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
         if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
             continue
 
@@ -191,18 +194,19 @@ def filter_dicom_files(
 
 
 def select_series_to_segment(
-    all_series: dict,
-    dose_report: dict,
+    all_series: dict[str, list[Path]],
+    dose_report: dict[str, dict],
 ) -> dict[str, SeriesData]:
     """
-    Select one or multiple series for segmentation and extract their DICOM tags. Finds the native CT series with the lowest slice thickness and highest number of slices.
-    Also finds the contrast phase CT series with the lowest slice thickness and highest number of slices per each contrast phase found.
+    Return one or more CT series with lowest slice thickness and highest file count based on contrast phase type:
+        - abdomen (native, no constrast phase), arterial, venous, nephrous.
 
     Args:
-        dataset (pydicom.FileDataset): all series found.
+        all_series (dict[str, list[Path]]): series to be selected for segmentation.
+        dose_report (dict[str, dict]): mapping of `IrradiationEventUID: dose_values`.
 
     Returns:
-        list: list consisting of SeriesMetadata dataclass for native CT and each contract phase CT.
+        dict[str, SeriesData]: mapping of `contrast_phase: SeriesData`.
     """
 
     series_by_contrast: dict[str, list[SeriesData]] = {}
