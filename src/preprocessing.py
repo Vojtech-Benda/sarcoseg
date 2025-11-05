@@ -332,7 +332,7 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyData):
+def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyData = None):
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
