@@ -1,12 +1,13 @@
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 import requests
-
+from pathlib import Path
+from typing import Union
+import pandas as pd
+import warnings
 from src.classes import LabkeyData
 
-API_HANDLER = APIWrapper(
-    domain="4lerco.fno.cz", container_path="Sarkopenie/Data", use_ssl=True
-)
+API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_ssl=True)
 
 
 def query_patient_data(
@@ -51,3 +52,30 @@ def is_labkey_reachable(verbose=False):
         print(f"4lerco.fno.cz unreachable: {e}")
         return False
     return True
+
+
+def send_data(
+    schema: str, query_name: str, rows: Union[list, dict], update_rows: bool = False
+):
+    print(f"sending {len(rows)} rows")
+    if update_rows:
+        response = API_HANDLER.query.update_rows(
+            schema_name=schema, query_name=query_name, rows=rows
+        )
+    else:
+        response = API_HANDLER.query.insert_rows(
+            schema_name=schema, query_name=query_name, rows=rows
+        )
+
+    if response["rowsAffected"] == 0:
+        print(f"labkey {query_name}: no rows affected")
+
+
+def collect_data(data_path: str) -> Union[None, list]:
+    data_path: Path = Path(data_path)
+
+    if not data_path.exists():
+        raise FileNotFoundError(1, "data file at path not found", data_path)
+
+    data = pd.read_csv(data_path, header=0, index_col=None)
+    return [data.iloc[row_idx].to_dict() for row_idx in data.index]
