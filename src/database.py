@@ -10,6 +10,46 @@ from src.classes import LabkeyData
 API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_ssl=True)
 
 
+class APIUser(APIWrapper):
+    def __init__(
+        self,
+        domain,
+        container_path,
+        context_path=None,
+        use_ssl=True,
+        verify_ssl=True,
+        api_key=None,
+        disable_csrf=False,
+        allow_redirects=False,
+    ):
+        super().__init__(
+            domain,
+            container_path,
+            context_path,
+            use_ssl,
+            verify_ssl,
+            api_key,
+            disable_csrf,
+            allow_redirects,
+        )
+
+    def is_labkey_reachable(verbose=False):
+        try:
+            response = requests.get(url="https://4lerco.fno.cz", timeout=5)
+            if verbose:
+                print(f"4lerco.fno.cz reachable: status {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"4lerco.fno.cz unreachable: {e}")
+            return False
+        return True
+
+
+def construct_api_handler(
+    domain: str, container_path: str = None, use_ssl: bool = True
+) -> APIWrapper:
+    return APIWrapper(domain=domain, container_path=container_path, use_ssl=use_ssl)
+
+
 def query_patient_data(
     patient_id: str, query_columns: list[str] = None, max_rows: int = -1
 ):

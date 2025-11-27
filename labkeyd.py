@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from src.database import send_data, is_labkey_reachable, collect_data
+from src.database import send_data, is_labkey_reachable, collect_data, APIUser
 
 
 def get_args():
@@ -39,10 +39,14 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
 
-    reached = is_labkey_reachable(args.verbose)
+    # reached = is_labkey_reachable(args.verbose)
+    api = APIUser("4lerco.fno.cz", "Sarkopenie/Data", use_ssl=True)
+    reached = api.is_labkey_reachable()
     if not reached:
         sys.exit(-1)
 
-    data = collect_data(args.data_path)
+    print(f"{api.domain}/{api.container}")
 
-    send_data(args.schema, args.query_name, rows=data, update_rows=args.update_rows)
+    # data = collect_data(args.data_path)
+
+    # send_data(args.schema, args.query_name, rows=data, update_rows=args.update_rows)
