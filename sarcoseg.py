@@ -49,11 +49,10 @@ def main(args):
         warnings.warn("Labkey is unreachable")
         sys.exit(-1)
 
-    patient_data = labkey_api.query_patient_data(
+    patient_data: list[database.LabkeyRow] = labkey_api.query_patients(
         args.schema_name,
         args.query_name,
-        "RODNE_CISLO,CAS_VYSETRENI,STUDY_INSTANCE_UID,VAHA_PAC.,PARTICIPANT",
-        normalize_data=True,
+        columns="RODNE_CISLO,CAS_VYSETRENI,STUDY_INSTANCE_UID,VAHA_PAC.,PARTICIPANT",
     )
 
     if len(patient_data) == 0:
@@ -73,34 +72,19 @@ def main(args):
         if status == -1:
             continue
 
-        preprocessing.preprocess_dicom(args.download_directory)
-        segmentation.segment_ct()
+        preprocessing.preprocess_dicom(
+            download_dir,
+            download_dir,
+            patient,
+        )
+
+        segmentation.segment_ct(download_dir, args.output_dir)
+
+
+def sarcoseg():
+    pass
 
 
 if __name__ == "__main__":
     args = get_args()
     main(args)
-
-    # preprocessing.preprocess_dicom(
-    #     args.input_dir, args.output_dir, query_labkey=args.query_labkey
-    # )
-    # print("finished preprocessing DICOM series")
-
-    # if args.collect_dicom_tags:
-    #     preprocessing.collect_all_dicom_tags(args.output_dir)
-
-    # if args.slices_num != 0 and args.slices_num < 2:
-    #     raise ValueError(
-    #         f"invalid value for --slices_num (used {args.slices_num}), for usage must be greater or equal 2"
-    #     )
-
-    # segmentation.segment_ct(
-    #     args.input_dir,
-    #     args.output_dir,
-    #     args.add_metrics,
-    #     slices_num=args.slices_num,
-    #     save_segmentations=args.save_segmentations,
-    #     save_mask_overlays=args.save_mask_overlays,
-    #     collect_metric_results=args.collect_metric_results,
-    # )
-    # print("finished CT segmentation")

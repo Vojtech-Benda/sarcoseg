@@ -4,7 +4,6 @@ import requests
 from pathlib import Path
 from typing import Union
 import pandas as pd
-import warnings
 from src.classes import LabkeyData
 from dotenv import dotenv_values
 from dataclasses import dataclass
@@ -18,6 +17,8 @@ class LabkeyRow:
     patient_id: str
     study_date: str
     study_instance_uid: str
+    patient_weight: float = None
+    participant: str = None
 
 
 class LabkeyAPI(APIWrapper):
@@ -54,14 +55,12 @@ class LabkeyAPI(APIWrapper):
             return False
         return True
 
-    def query_patient_data(
+    def query_patients(
         self,
         schema: str,
         query: str,
         columns: list[str] | str = None,
-        max_rows: int = -1,
-        normalize_data=False,
-    ) -> list[dict | LabkeyRow]:
+    ) -> list[LabkeyData]:
         if isinstance(columns, list):
             columns = ",".join(columns)
 
@@ -70,29 +69,34 @@ class LabkeyAPI(APIWrapper):
             f"domain: {self.server_context.hostname}, schema: {schema}, query: {query}, columns: {columns}"
         )
         response = self.query.select_rows(
-            schema_name=schema, query_name=query, max_rows=max_rows, columns=columns
+            schema_name=schema, query_name=query, columns=columns
         )
 
         rows = response.get("rows", [])
         print(f"returned rows: {len(rows)}")
         if rows is None:
-            return {}
+            print("no matching rows")
+            return []
 
-        if normalize_data:
-            return self.normalize_response_data(rows)
+        queried_data = [normalize_labkey_data(data) for data in rows]
+        # for row in rows:
+        #     data = LabkeyData(
+        #         data={c: row.get(c, "n/a") for c in columns}, query_columns=columns
+        #     )
+        #     setattr(data, "study_date", normalize_date(data["CAS_VYSETRENI"]))
+        #     queried_data.append(data)
 
-        return rows
+        return queried_data
 
-    def normalize_response_data(self, response_data: list[dict]) -> list[LabkeyRow]:
-        normalized = []
-        for data in response_data:
-            row = LabkeyRow(
-                patient_id=data.get("RODNE_CISLO", ""),
-                study_date=normalize_date(data.get("CAS_VYSETRENI", "")),
-                study_instance_uid=data.get("STUDYINSTANCEUID", ""),
-            )
-            normalized.append(row)
-        return normalized
+
+def normalize_labkey_data(data):
+    return LabkeyRow(
+        patient_id=data["RODNE_CISLO"],
+        study_date=normalize_date(data["CAS_VYSETRENI"]),
+        study_instance_uid=data["STUDY_INSTANCE_UID"],
+        patient_weight=data["VAHA_PAC."],
+        participant=data["PARTICIPANT"],
+    )
 
 
 def normalize_date(raw_date_time: str) -> str:
@@ -102,57 +106,13 @@ def normalize_date(raw_date_time: str) -> str:
 
 def construct_api_handler(
     domain: str, container_path: str = None, use_ssl: bool = True
-) -> APIWrapper:
-    return APIWrapper(domain=domain, container_path=container_path, use_ssl=use_ssl)
+) -> LabkeyAPI:
+    return LabkeyAPI(domain=domain, container_path=container_path, use_ssl=use_ssl)
 
 
 def labkey_from_dotenv() -> LabkeyAPI:
     config = dotenv_values()
     return LabkeyAPI(config["domain"], config["container_path"])
-
-
-def query_patient_data(
-    patient_id: str, query_columns: list[str] = None, max_rows: int = -1
-):
-    if not isinstance(query_columns, list):
-        raise TypeError("positional argument `columns` must be list of strings")
-
-    response = API_HANDLER.query.select_rows(
-        schema_name="lists",
-        query_name="RDG-CT-Sarko-All",
-        columns=",".join(query_columns) if query_columns else None,
-        max_rows=max_rows,
-        filter_array=[
-            QueryFilter(
-                column="RODNE_CISLO",
-                value=patient_id,
-                filter_type=QueryFilter.Types.EQUAL,
-            )
-        ],
-    )
-    rows = response.get("rows", [])
-    if len(rows) == 0:
-        print(
-            f"labkey query for {patient_id=} has not matches, queried value possibly not found"
-        )
-        return None
-
-    queried_data = LabkeyData(
-        data={c: rows[0].get(c, "n/a") for c in query_columns},
-        query_columns=query_columns,
-    )
-    return queried_data
-
-
-def is_labkey_reachable(verbose=False):
-    try:
-        response = requests.get(url="https://4lerco.fno.cz", timeout=5)
-        if verbose:
-            print(f"4lerco.fno.cz reachable: status {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"4lerco.fno.cz unreachable: {e}")
-        return False
-    return True
 
 
 def send_data(

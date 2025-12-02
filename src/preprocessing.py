@@ -29,12 +29,8 @@ CONTRAST_PHASES_PATTERN = re.compile(
 def preprocess_dicom(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = "./inputs",
-    query_labkey: bool = False,
+    labkey_data: database.LabkeyRow = None,
 ) -> None:
-    if query_labkey:
-        if not database.is_labkey_reachable(verbose=True):
-            sys.exit(-1)
-
     print("preprocessing DICOM files")
 
     if not isinstance(input_dir, Path):
@@ -43,40 +39,37 @@ def preprocess_dicom(
     if not isinstance(output_dir, Path):
         output_dir = Path(output_dir)
 
-    for dicom_dir in input_dir.glob("*/"):
-        dicom_files = find_dicoms(dicom_dir)
+    dicom_files = find_dicoms(input_dir)
 
-        study_data, files_by_series_uid, dose_report_path = filter_dicom_files(
-            dicom_files
-        )
+    study_data, files_by_series_uid, dose_report_path = filter_dicom_files(dicom_files)
 
-        dose_per_event = extract_dose_values(dose_report_path)
+    dose_per_event = extract_dose_values(dose_report_path)
 
-        study_data.series_dict = select_series_to_segment(
-            files_by_series_uid, dose_report=dose_per_event
-        )
+    study_data.series_dict = select_series_to_segment(
+        files_by_series_uid, dose_report=dose_per_event
+    )
 
-        print(f"found {len(study_data.series_dict)} valid series for segmentation")
-        print(
-            f"saving id `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
-        )
+    print(f"found {len(study_data.series_dict)} valid series for segmentation")
+    print(
+        f"saving id `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
+    )
 
-        output_study_dir = Path(output_dir, study_data.study_inst_uid)
-        output_study_dir.mkdir(exist_ok=True, parents=True)
+    output_study_dir = Path(output_dir, study_data.study_inst_uid)
+    output_study_dir.mkdir(exist_ok=True, parents=True)
 
-        if query_labkey:
-            labkey_data = database.query_patient_data(
-                study_data.patient_id,
-                query_columns=["PARTICIPANT", "VYSKA_PAC."],
-                max_rows=1,
-            )
+    # if query_labkey:
+    #     labkey_data = database.query_patient_data(
+    #         study_data.patient_id,
+    #         query_columns=["PARTICIPANT", "VYSKA_PAC."],
+    #         max_rows=1,
+    #     )
 
-        write_dicom_tags(output_study_dir, study_data, labkey_data)
+    write_dicom_tags(output_study_dir, study_data, labkey_data)
 
-        for series_data in study_data.series_dict.values():
-            write_series_as_nifti(output_study_dir, series_data)
+    for series_data in study_data.series_dict.values():
+        write_series_as_nifti(output_study_dir, series_data)
 
-        print("-" * 25)
+    print("-" * 25)
 
 
 def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
@@ -332,7 +325,9 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyData = None):
+def write_dicom_tags(
+    study_dir: Path, study: StudyData, labkey_data: database.LabkeyRow = None
+):
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
@@ -352,8 +347,8 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyData 
         if labkey_data:
             row.update(
                 {
-                    col.lower(): labkey_data.data[col]
-                    for col in labkey_data.query_columns
+                    "participant": labkey_data.participant,
+                    "patient_weight": labkey_data.patient_weight,
                 }
             )
 

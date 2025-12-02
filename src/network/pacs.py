@@ -28,6 +28,14 @@ class PacsAPI:
     def movescu(
         self, study_uid: str, patient_id: str, study_date: str, download_directory: str
     ):
+        if os.path.exists(download_directory) and os.listdir(download_directory) != 0:
+            print(
+                f"skipping existing directory with DICOM files for study uid {study_uid}"
+            )
+            return 0
+
+        os.makedirs(download_directory, exist_ok=True)
+
         args = [
             self.ip,
             str(self.port),
@@ -60,6 +68,8 @@ class PacsAPI:
                 f"PatientID={patient_id}",
                 "-k",
                 f"StudyDate={study_date}",
+                "-k",
+                "Modality=CT",
             ]
             movescu.main(args2)
 
