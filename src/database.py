@@ -6,11 +6,21 @@ from typing import Union
 import pandas as pd
 import warnings
 from src.classes import LabkeyData
+from dotenv import dotenv_values
+from dataclasses import dataclass
+
 
 API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_ssl=True)
 
 
-class APIUser(APIWrapper):
+@dataclass
+class LabkeyRow:
+    patient_id: str
+    study_date: str
+    study_instance_uid: str
+
+
+class LabkeyAPI(APIWrapper):
     def __init__(
         self,
         domain,
@@ -33,21 +43,72 @@ class APIUser(APIWrapper):
             allow_redirects,
         )
 
-    def is_labkey_reachable(verbose=False):
+    def is_labkey_reachable(self, verbose=False):
+        hostname = self.server_context.hostname
         try:
-            response = requests.get(url="https://4lerco.fno.cz", timeout=5)
+            response = requests.get(url=hostname, timeout=5)
             if verbose:
-                print(f"4lerco.fno.cz reachable: status {response.status_code}")
+                print(f"{hostname} reachable: status {response.status_code}")
         except requests.exceptions.RequestException as e:
-            print(f"4lerco.fno.cz unreachable: {e}")
+            print(f"{hostname} unreachable: {e}")
             return False
         return True
+
+    def query_patient_data(
+        self,
+        schema: str,
+        query: str,
+        columns: list[str] | str = None,
+        max_rows: int = -1,
+        normalize_data=False,
+    ) -> list[dict | LabkeyRow]:
+        if isinstance(columns, list):
+            columns = ",".join(columns)
+
+        print("labkey query:")
+        print(
+            f"domain: {self.server_context.hostname}, schema: {schema}, query: {query}, columns: {columns}"
+        )
+        response = self.query.select_rows(
+            schema_name=schema, query_name=query, max_rows=max_rows, columns=columns
+        )
+
+        rows = response.get("rows", [])
+        print(f"returned rows: {len(rows)}")
+        if rows is None:
+            return {}
+
+        if normalize_data:
+            return self.normalize_response_data(rows)
+
+        return rows
+
+    def normalize_response_data(self, response_data: list[dict]) -> list[LabkeyRow]:
+        normalized = []
+        for data in response_data:
+            row = LabkeyRow(
+                patient_id=data.get("RODNE_CISLO", ""),
+                study_date=normalize_date(data.get("CAS_VYSETRENI", "")),
+                study_instance_uid=data.get("STUDYINSTANCEUID", ""),
+            )
+            normalized.append(row)
+        return normalized
+
+
+def normalize_date(raw_date_time: str) -> str:
+    date = raw_date_time.split(" ")[0]
+    return date.replace("-", "")
 
 
 def construct_api_handler(
     domain: str, container_path: str = None, use_ssl: bool = True
 ) -> APIWrapper:
     return APIWrapper(domain=domain, container_path=container_path, use_ssl=use_ssl)
+
+
+def labkey_from_dotenv() -> LabkeyAPI:
+    config = dotenv_values()
+    return LabkeyAPI(config["domain"], config["container_path"])
 
 
 def query_patient_data(
