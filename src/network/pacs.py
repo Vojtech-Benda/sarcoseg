@@ -25,9 +25,7 @@ class PacsAPI:
         self.aem = aem if aem else aet
         self.store_port = store_port
 
-    def movescu(
-        self, study_uid: str, patient_id: str, study_date: str, download_directory: str
-    ):
+    def movescu(self, study_uid: str, download_directory: str):
         if os.path.exists(download_directory) and os.listdir(download_directory) != 0:
             print(
                 f"skipping existing directory with DICOM files for study uid {study_uid}"
@@ -52,31 +50,15 @@ class PacsAPI:
             download_directory,
             "-k",
             "QueryRetrieveLevel=STUDY",
+            "-k",
+            f"StudyInstanceUID={study_uid}",
         ]
 
-        if study_uid:
-            args1 = args + ["-k", f"StudyInstanceUID={study_uid}"]
-            print(f"running C-MOVE for StudyInstanceUID: {study_uid}")
-            movescu.main(args1)
+        print(f"running C-MOVE for StudyInstanceUID: {study_uid}")
+        movescu.main(args)
 
         if len(os.listdir(download_directory)) == 0:
-            print(
-                f"C-MOVE with StudyInstanceUID failed, rerunning with PatientID: {patient_id}, StudyDate: {study_date}"
-            )
-            args2 = args + [
-                "-k",
-                f"PatientID={patient_id}",
-                "-k",
-                f"StudyDate={study_date}",
-                "-k",
-                "Modality=CT",
-            ]
-            movescu.main(args2)
-
-        if len(os.listdir(download_directory)) == 0:
-            print(
-                f"C-MOVE failed downloading data for StudyInstanceUID: {study_uid}, PatientID={patient_id}, StudyDate={study_date}"
-            )
+            print(f"C-MOVE failed downloading data for StudyInstanceUID: {study_uid}")
             return -1
 
         print("finished C-MOVE")

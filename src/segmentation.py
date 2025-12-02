@@ -19,107 +19,105 @@ MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
 def segment_ct(
-    input_dir: str,
-    output_dir: str,
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path],
     slices_num: int = 0,
     save_mask_overlays: bool = False,
     collect_metric_results: bool = False,
 ):
-    case_dirs = list(Path(input_dir).glob("*/"))
-    print(f"found {len(case_dirs)} case directories")
+    # case_dirs = list(Path(input_dir).glob("*/"))
+    # print(f"found {len(case_dirs)} case directories")
 
-    output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
-    output_dir.mkdir()
-    for case_dir in case_dirs:
-        ct_volume_files = list(case_dir.rglob("*.nii.gz"))
+    # output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    # output_dir.mkdir()
+    # for case_dir in case_dirs:
+    ct_volume_files = list(input_dir.rglob("*.nii.gz"))
 
-        usecols = [
-            "participant",
-            "patient_id",
-            "study_inst_uid",
-            "series_inst_uid",
-            "contrast_phase",
-            "vyska_pac.",
-        ]
-        df_tags = pd.read_csv(
-            Path(case_dir, "dicom_tags.csv"),
-            index_col=False,
-            header=0,
-            usecols=lambda col: col in usecols,
-            dtype={"patient_id": str, "vyska_pac.": float},
+    usecols = [
+        "participant",
+        "patient_id",
+        "study_inst_uid",
+        "series_inst_uid",
+        "contrast_phase",
+        "vyska_pac.",
+    ]
+    df_tags = pd.read_csv(
+        Path(input_dir, "dicom_tags.csv"),
+        index_col=False,
+        header=0,
+        usecols=lambda col: col in usecols,
+        dtype={"patient_id": str, "vyska_pac.": float},
+    )
+
+    print("-" * 25)
+    print(
+        f"\nfound {len(ct_volume_files)} volumes to segment spine for case `{input_dir.name}`"
+    )
+
+    metric_results_list: list[MetricsData] = []
+
+    for ct_volume_path in ct_volume_files:
+        # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
+        case_output_dir = Path(output_dir, *ct_volume_path.parent.parts[-2:])
+        case_output_dir.mkdir(exist_ok=True, parents=True)
+
+        shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
+
+        input_volume_data: ImageData = utils.read_volume(ct_volume_path)
+
+        series_inst_uid = case_output_dir.parts[-1]
+        print(f"running segmentation on `{series_inst_uid}`")
+        spine_mask_data, spine_duration = segment_spine(ct_volume_path, case_output_dir)
+
+        tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
+            input_volume_data.image,
+            spine_mask_data.image,
+            case_output_dir,
+            slices_num,
         )
 
-        print("-" * 25)
-        print(
-            f"\nfound {len(ct_volume_files)} volumes to segment spine for case `{case_dir.name}`"
+        tissue_mask_data, tissue_duration = segment_tissues(
+            tissue_volume_data.path, case_output_dir
         )
 
-        metric_results_list: list[MetricsData] = []
+        processed_data, postproc_duration = utils.postprocess_tissue_masks(
+            tissue_mask_data,
+            tissue_volume_data,
+        )
 
-        for ct_volume_path in ct_volume_files:
-            # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
-            case_output_dir = Path(output_dir, *ct_volume_path.parent.parts[-2:])
-            case_output_dir.mkdir(exist_ok=True, parents=True)
+        series_tags = utils.get_series_tags(df_tags, series_inst_uid)
+        metrics_results = utils.compute_metrics(
+            processed_data,
+            tissue_volume_data,
+            series_df_tags=series_tags,
+        )
 
-            shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
+        metrics_results.set_patient_data(df_tags, series_inst_uid)
+        metrics_results.set_duration(
+            spine_duration, tissue_duration, extraction_duration, postproc_duration
+        )
+        metrics_results.centroids = centroids
+        metric_results_list.append(metrics_results)
 
-            input_volume_data: ImageData = utils.read_volume(ct_volume_path)
-
-            series_inst_uid = case_output_dir.parts[-1]
-            print(f"running segmentation on `{series_inst_uid}`")
-            spine_mask_data, spine_duration = segment_spine(
-                ct_volume_path, case_output_dir
-            )
-
-            tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
+        if save_mask_overlays:
+            case_images_dir = case_output_dir.joinpath("images")
+            case_images_dir.mkdir(exist_ok=True)
+            visualization.overlay_spine_mask(
                 input_volume_data.image,
                 spine_mask_data.image,
-                case_output_dir,
-                slices_num,
+                centroids.vertebre_centroid,
+                output_dir=case_images_dir,
             )
 
-            tissue_mask_data, tissue_duration = segment_tissues(
-                tissue_volume_data.path, case_output_dir
+            visualization.overlay_tissue_mask(
+                tissue_volume_data.image,
+                processed_data.image,
+                output_dir=case_images_dir,
             )
 
-            processed_data, postproc_duration = utils.postprocess_tissue_masks(
-                tissue_mask_data,
-                tissue_volume_data,
-            )
-
-            series_tags = utils.get_series_tags(df_tags, series_inst_uid)
-            metrics_results = utils.compute_metrics(
-                processed_data,
-                tissue_volume_data,
-                series_df_tags=series_tags,
-            )
-
-            metrics_results.set_patient_data(df_tags, series_inst_uid)
-            metrics_results.set_duration(
-                spine_duration, tissue_duration, extraction_duration, postproc_duration
-            )
-            metrics_results.centroids = centroids
-            metric_results_list.append(metrics_results)
-
-            if save_mask_overlays:
-                case_images_dir = case_output_dir.joinpath("images")
-                case_images_dir.mkdir(exist_ok=True)
-                visualization.overlay_spine_mask(
-                    input_volume_data.image,
-                    spine_mask_data.image,
-                    centroids.vertebre_centroid,
-                    output_dir=case_images_dir,
-                )
-
-                visualization.overlay_tissue_mask(
-                    tissue_volume_data.image,
-                    processed_data.image,
-                    output_dir=case_images_dir,
-                )
-
-        write_metric_results(
-            metric_results_list, Path(output_dir, case_output_dir.parts[-2])
-        )
+    write_metric_results(
+        metric_results_list, Path(output_dir, case_output_dir.parts[-2])
+    )
 
     if collect_metric_results:
         collect_all_metric_results(output_dir)

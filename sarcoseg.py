@@ -2,6 +2,7 @@ import sys
 import argparse
 import warnings
 from pathlib import Path
+from datetime import datetime
 
 from src import preprocessing
 from src import segmentation
@@ -27,6 +28,13 @@ def get_args():
         "--download-dir",
         type=str,
         help="path to PACS download directory",
+        default="./download",
+    )
+    parser.add_argument(
+        "-id",
+        "--input-dir",
+        type=str,
+        help="path to input directory",
         default="./inputs",
     )
     parser.add_argument(
@@ -49,36 +57,43 @@ def main(args):
         warnings.warn("Labkey is unreachable")
         sys.exit(-1)
 
-    patient_data: list[database.LabkeyRow] = labkey_api.query_patients(
+    queried_labkey_data: list[dict] = labkey_api._select_rows(
         args.schema_name,
         args.query_name,
-        columns="RODNE_CISLO,CAS_VYSETRENI,STUDY_INSTANCE_UID,VAHA_PAC.,PARTICIPANT",
+        columns="STUDY_INSTANCE_UID,VYSKA_PAC.,PARTICIPANT",
+        sanitize_rows=True,
     )
 
-    if len(patient_data) == 0:
+    if queried_labkey_data is None:
         warnings.warn("exiting sarcoseg")
-        warnings.warn("reason: no labkey response data")
+        warnings.warn(
+            "reason: no labkey response data with queried study instance uids"
+        )
         sys.exit(-1)
 
-    for patient in patient_data:
-        download_dir = Path(args.download_directory, patient.study_instance_uid)
+    segmentation_output_dir = Path(
+        args.output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    )
+    segmentation_output_dir.mkdir(exist_ok=True)
+
+    for labkey_data in queried_labkey_data:
+        download_dir = Path(args.download_directory, labkey_data["STUDY_INSTANCE_UID"])
         status = pacs_api.movescu(
-            patient.study_instance_uid,
-            patient.patient_id,
-            patient.study_date,
+            labkey_data["STUDY_INSTANCE_UID"],
             download_dir,
         )
 
         if status == -1:
             continue
 
-        preprocessing.preprocess_dicom(
-            download_dir,
-            download_dir,
-            patient,
+        preprocessing.preprocess_dicom(download_dir, args.input_dir, labkey_data)
+
+        segmentation.segment_ct(
+            args.input_dir, segmentation_output_dir, save_mask_overlays=True
         )
 
-        segmentation.segment_ct(download_dir, args.output_dir)
+        # TODO: send dicom data to labkey
+        # TODO: send segmentation data to labkey
 
 
 def sarcoseg():

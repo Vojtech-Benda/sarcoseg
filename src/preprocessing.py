@@ -29,7 +29,7 @@ CONTRAST_PHASES_PATTERN = re.compile(
 def preprocess_dicom(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = "./inputs",
-    labkey_data: database.LabkeyRow = None,
+    labkey_data: dict = None,
 ) -> None:
     print("preprocessing DICOM files")
 
@@ -58,11 +58,11 @@ def preprocess_dicom(
     output_study_dir.mkdir(exist_ok=True, parents=True)
 
     # if query_labkey:
-    #     labkey_data = database.query_patient_data(
-    #         study_data.patient_id,
-    #         query_columns=["PARTICIPANT", "VYSKA_PAC."],
-    #         max_rows=1,
-    #     )
+    # labkey_data = database.query_patient_data(
+    #     study_data.patient_id,
+    #     query_columns=["PARTICIPANT", "VYSKA_PAC."],
+    #     max_rows=1,
+    # )
 
     write_dicom_tags(output_study_dir, study_data, labkey_data)
 
@@ -325,9 +325,7 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(
-    study_dir: Path, study: StudyData, labkey_data: database.LabkeyRow = None
-):
+def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None):
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
@@ -345,12 +343,8 @@ def write_dicom_tags(
             "dose_length_product": series.dose_length_product,
         }
         if labkey_data:
-            row.update(
-                {
-                    "participant": labkey_data.participant,
-                    "patient_weight": labkey_data.patient_weight,
-                }
-            )
+            row["participant"] = labkey_data["PARTICIPANT"]
+            row["vyska_pac."] = labkey_data["VYSKA_PAC."]
 
         rows.append(row)
 

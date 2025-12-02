@@ -55,12 +55,13 @@ class LabkeyAPI(APIWrapper):
             return False
         return True
 
-    def query_patients(
+    def _select_rows(
         self,
         schema: str,
         query: str,
         columns: list[str] | str = None,
-    ) -> list[LabkeyData]:
+        sanitize_rows: bool = False,
+    ) -> list[dict] | None:
         if isinstance(columns, list):
             columns = ",".join(columns)
 
@@ -68,46 +69,27 @@ class LabkeyAPI(APIWrapper):
         print(
             f"domain: {self.server_context.hostname}, schema: {schema}, query: {query}, columns: {columns}"
         )
+
         response = self.query.select_rows(
-            schema_name=schema, query_name=query, columns=columns
+            schema_name=schema,
+            query_name=query,
+            columns=",".join(columns) if isinstance(columns, list) else columns,
         )
 
         rows = response.get("rows", [])
         print(f"returned rows: {len(rows)}")
-        if rows is None:
+        if len(rows) == 0:
             print("no matching rows")
-            return []
+            return None
 
-        queried_data = [normalize_labkey_data(data) for data in rows]
-        # for row in rows:
-        #     data = LabkeyData(
-        #         data={c: row.get(c, "n/a") for c in columns}, query_columns=columns
-        #     )
-        #     setattr(data, "study_date", normalize_date(data["CAS_VYSETRENI"]))
-        #     queried_data.append(data)
+        if sanitize_rows:
+            return self.sanitize_response_data(rows, columns)
+        return rows
 
-        return queried_data
-
-
-def normalize_labkey_data(data):
-    return LabkeyRow(
-        patient_id=data["RODNE_CISLO"],
-        study_date=normalize_date(data["CAS_VYSETRENI"]),
-        study_instance_uid=data["STUDY_INSTANCE_UID"],
-        patient_weight=data["VAHA_PAC."],
-        participant=data["PARTICIPANT"],
-    )
-
-
-def normalize_date(raw_date_time: str) -> str:
-    date = raw_date_time.split(" ")[0]
-    return date.replace("-", "")
-
-
-def construct_api_handler(
-    domain: str, container_path: str = None, use_ssl: bool = True
-) -> LabkeyAPI:
-    return LabkeyAPI(domain=domain, container_path=container_path, use_ssl=use_ssl)
+    def sanitize_response_data(self, rows: list[dict], columns: list[str] | str):
+        if isinstance(columns, str):
+            columns = columns.split(",")
+        return [{col: row[col] for col in row if col in columns} for row in rows]
 
 
 def labkey_from_dotenv() -> LabkeyAPI:
