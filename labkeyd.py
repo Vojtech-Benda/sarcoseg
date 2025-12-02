@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from src.database import send_data, is_labkey_reachable, collect_data, APIUser
+from src import database
 
 
 def get_args():
@@ -10,25 +10,25 @@ def get_args():
         description="Data upload to Labkey database at 4lerco.fno.cz.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "-s",
-        "--schema",
-        required=True,
-        type=str,
-        help="labkey schema",
-        choices=("lists", "dataset"),
-        default="lists",
-    )
-    parser.add_argument(
-        "-q", "--query-name", required=True, type=str, help="queried table name"
-    )
-    parser.add_argument(
-        "-d",
-        "--data-path",
-        required=True,
-        type=str,
-        help="path to .csv table with row data",
-    )
+    # parser.add_argument(
+    #     "-s",
+    #     "--schema",
+    #     required=True,
+    #     type=str,
+    #     help="labkey schema",
+    #     choices=("lists", "dataset"),
+    #     default="lists",
+    # )
+    # parser.add_argument(
+    #     "-q", "--query-name", required=True, type=str, help="queried table name"
+    # )
+    # parser.add_argument(
+    #     "-d",
+    #     "--data-path",
+    #     required=True,
+    #     type=str,
+    #     help="path to .csv table with row data",
+    # )
     parser.add_argument(
         "--update-rows", action="store_true", help="update column values at rows"
     )
@@ -40,12 +40,11 @@ if __name__ == "__main__":
     args = get_args()
 
     # reached = is_labkey_reachable(args.verbose)
-    api = APIUser("4lerco.fno.cz", "Sarkopenie/Data", use_ssl=True)
-    reached = api.is_labkey_reachable()
-    if not reached:
-        sys.exit(-1)
+    labkey_api = database.labkey_from_dotenv()
+    if not labkey_api.is_labkey_reachable():
+        print("labkey is not reachable")
 
-    print(f"{api.domain}/{api.container}")
+        sys.exit(-1)
 
     # data = collect_data(args.data_path)
 
