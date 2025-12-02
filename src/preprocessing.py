@@ -11,7 +11,7 @@ import dcm2niix
 from statistics import mean
 from datetime import datetime
 
-from src import database
+from src.network import database
 from src.classes import SeriesData, StudyData, LabkeyData
 
 

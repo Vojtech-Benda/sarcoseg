@@ -6,8 +6,7 @@ from datetime import datetime
 
 from src import preprocessing
 from src import segmentation
-from src.network import pacs
-from src import database
+from src.network import pacs, database
 
 
 def get_args():
