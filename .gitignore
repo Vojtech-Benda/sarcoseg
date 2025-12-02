@@ -7,6 +7,9 @@ outputs/
 .vscode/
 .venv/
 .venv-test/
+
+# project files
+.env
 src/fnosarcoseg.egg-info/
 build/
 tests/data
