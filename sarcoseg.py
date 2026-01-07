@@ -43,6 +43,13 @@ def get_args():
         help="path to segmentation output directory",
         default="./outputs",
     )
+    parser.add_argument(
+        "--upload-labkey",
+        action="store_true",
+        help="upload preprocessing and segmentation data to labkey",
+        default=False,
+    )
+
     return parser.parse_args()
 
 
@@ -76,9 +83,10 @@ def main(args):
     segmentation_output_dir.mkdir(exist_ok=True)
 
     for labkey_data in queried_labkey_data:
-        download_dir = Path(args.download_directory, labkey_data["STUDY_INSTANCE_UID"])
+        study_uid = labkey_data["STUDY_INSTANCE_UID"]
+        download_dir = Path(args.download_dir, study_uid)
         status = pacs_api.movescu(
-            labkey_data["STUDY_INSTANCE_UID"],
+            study_uid,
             download_dir,
         )
 
@@ -91,12 +99,10 @@ def main(args):
             args.input_dir, segmentation_output_dir, save_mask_overlays=True
         )
 
+    if args.upload_labkey:
+        pass
         # TODO: send dicom data to labkey
         # TODO: send segmentation data to labkey
-
-
-def sarcoseg():
-    pass
 
 
 if __name__ == "__main__":
