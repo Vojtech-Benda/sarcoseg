@@ -349,7 +349,7 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
         rows.append(row)
 
     df = pd.DataFrame(rows, columns=rows[0].keys())
-    filepath = study_dir.joinpath("dicom_tags.csv")
+    filepath = study_dir.joinpath(f"dicom_tags_{study.study_inst_uid}.csv")
 
     if filepath.exists():
         print(f"overwriting existing dicom_tags.csv at `{str(filepath)}`")
