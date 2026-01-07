@@ -39,7 +39,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    preprocessing.preprocess_dicom(
+    preprocessing.preprocess_dicom_study(
         args.input_dir, args.output_dir, query_labkey=args.query_labkey
     )
 

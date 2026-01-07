@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     check_slices_num_value(args.slices_num)
 
-    segmentation.segment_ct(
+    segmentation.segment_ct_study(
         args.input_dir,
         args.output_dir,
         slices_num=args.slices_num,

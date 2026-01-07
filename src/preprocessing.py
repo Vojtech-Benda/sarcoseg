@@ -26,17 +26,17 @@ CONTRAST_PHASES_PATTERN = re.compile(
 )
 
 
-def preprocess_dicom(
+def preprocess_dicom_study(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = "./inputs",
     labkey_data: dict = None,
 ) -> None:
     print("preprocessing DICOM files")
 
-    if not isinstance(input_dir, Path):
+    if isinstance(input_dir, str):
         input_dir = Path(input_dir)
 
-    if not isinstance(output_dir, Path):
+    if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
     dicom_files = find_dicoms(input_dir)
@@ -367,12 +367,14 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
 
 
 def collect_all_dicom_tags(
-    input_dir: Union[str, Path], output_dir: Union[str, Path] = None
-):
-    if not isinstance(input_dir, Path):
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path] = None,
+    write_to_csv: bool = False,
+) -> pd.DataFrame:
+    if isinstance(input_dir, str):
         input_dir = Path(input_dir)
 
-    if not isinstance(output_dir, Path):
+    if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
     dicom_tags_files = list(input_dir.rglob("dicom_tags.*"))
@@ -382,18 +384,22 @@ def collect_all_dicom_tags(
         ignore_index=True,
     )
 
-    filepath = Path(
-        output_dir if output_dir else input_dir,
-        "all_dicom_tags_" + datetime.now().strftime("%d-%m-%Y_%H-%M-%S") + ".csv",
-    )
-    df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
     print(
-        f"written all DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+        f"collected DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series)"
     )
+    if write_to_csv:
+        filepath = Path(
+            output_dir if output_dir else input_dir,
+            f"all_dicom_tags_{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}.csv",
+        )
+        df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
+        print(f"DICOM tags written to `{filepath}`")
+
+    return df
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 1:
         print("Missing input directory")
         sys.exit(-1)
-    preprocess_dicom(sys.argv[1])
+    preprocess_dicom_study(sys.argv[1])

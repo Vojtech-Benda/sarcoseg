@@ -53,7 +53,7 @@ def get_args():
     return parser.parse_args()
 
 
-def main(args):
+def main(args: argparse.Namespace):
     verbose = args.verbose
 
     pacs_api = pacs.pacs_from_dotenv(verbose=verbose)
@@ -93,9 +93,11 @@ def main(args):
         if status == -1:
             continue
 
-        preprocessing.preprocess_dicom(download_dir, args.input_dir, labkey_data)
+        preprocessing.preprocess_dicom_study(download_dir, args.input_dir, labkey_data)
+        
+        preprocessing.collect_all_dicom_tags("")
 
-        segmentation.segment_ct(
+        segmentation.segment_ct_study(
             args.input_dir, segmentation_output_dir, save_mask_overlays=True
         )
 
