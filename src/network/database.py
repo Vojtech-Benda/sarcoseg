@@ -57,8 +57,8 @@ class LabkeyAPI(APIWrapper):
 
     def _select_rows(
         self,
-        schema: str,
-        query: str,
+        schema_name: str,
+        query_name: str,
         columns: list[str] | str = None,
         sanitize_rows: bool = False,
     ) -> list[dict] | None:
@@ -67,12 +67,12 @@ class LabkeyAPI(APIWrapper):
 
         print("labkey query:")
         print(
-            f"domain: {self.server_context.hostname}, schema: {schema}, query: {query}, columns: {columns}"
+            f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
         )
 
         response = self.query.select_rows(
-            schema_name=schema,
-            query_name=query,
+            schema_name=schema_name,
+            query_name=query_name,
             columns=",".join(columns) if isinstance(columns, list) else columns,
         )
 

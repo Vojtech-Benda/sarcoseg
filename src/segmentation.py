@@ -18,7 +18,7 @@ from src.classes import ImageData, MetricsData
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
-def segment_ct(
+def segment_ct_study(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path],
     slices_num: int = 0,
@@ -31,7 +31,7 @@ def segment_ct(
     # output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     # output_dir.mkdir()
     # for case_dir in case_dirs:
-    ct_volume_files = list(input_dir.rglob("*.nii.gz"))
+    series_nifti_files = list(input_dir.rglob("*.nii.gz"))
 
     usecols = [
         "participant",
@@ -51,23 +51,23 @@ def segment_ct(
 
     print("-" * 25)
     print(
-        f"\nfound {len(ct_volume_files)} volumes to segment spine for case `{input_dir.name}`"
+        f"\nfound {len(series_nifti_files)} volumes to segment spine for case `{input_dir.name}`"
     )
 
     metric_results_list: list[MetricsData] = []
 
-    for ct_volume_path in ct_volume_files:
+    for series_file in series_nifti_files:
         # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
-        case_output_dir = Path(output_dir, *ct_volume_path.parent.parts[-2:])
+        case_output_dir = Path(output_dir, *series_file.parent.parts[-2:])
         case_output_dir.mkdir(exist_ok=True, parents=True)
 
-        shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
+        shutil.copy2(series_file, case_output_dir.joinpath(series_file.name))
 
-        input_volume_data: ImageData = utils.read_volume(ct_volume_path)
+        input_volume_data: ImageData = utils.read_volume(series_file)
 
         series_inst_uid = case_output_dir.parts[-1]
         print(f"running segmentation on `{series_inst_uid}`")
-        spine_mask_data, spine_duration = segment_spine(ct_volume_path, case_output_dir)
+        spine_mask_data, spine_duration = segment_spine(series_file, case_output_dir)
 
         tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
             input_volume_data.image,

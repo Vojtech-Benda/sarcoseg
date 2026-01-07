@@ -64,8 +64,8 @@ def main(args: argparse.Namespace):
         sys.exit(-1)
 
     queried_labkey_data: list[dict] = labkey_api._select_rows(
-        args.schema_name,
-        args.query_name,
+        schema_name="lists",
+        query_name="RDG-CT-Sarko-All",
         columns="STUDY_INSTANCE_UID,VYSKA_PAC.,PARTICIPANT",
         sanitize_rows=True,
     )
