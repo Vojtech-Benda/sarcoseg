@@ -60,10 +60,11 @@ class LabkeyAPI(APIWrapper):
         schema_name: str,
         query_name: str,
         columns: list[str] | str = None,
+        max_rows: int = -1,
         sanitize_rows: bool = False,
     ) -> list[dict] | None:
-        if isinstance(columns, list):
-            columns = ",".join(columns)
+        # if isinstance(columns, list):
+        #     columns = ",".join(columns)
 
         print("labkey query:")
         print(
@@ -74,6 +75,7 @@ class LabkeyAPI(APIWrapper):
             schema_name=schema_name,
             query_name=query_name,
             columns=",".join(columns) if isinstance(columns, list) else columns,
+            max_rows=max_rows,
         )
 
         rows = response.get("rows", [])
