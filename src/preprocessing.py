@@ -45,6 +45,12 @@ def preprocess_dicom_study(
 
     dose_per_event = extract_dose_values(dose_report_path)
 
+    if not dose_per_event:
+        print(
+            f"PatientID {study_data.patient_id}, study {study_data.study_inst_uid} does not have Dose Report"
+        )
+        print(f"{dose_per_event=}")
+
     study_data.series_dict = select_series_to_segment(
         files_by_series_uid, dose_report=dose_per_event
     )
@@ -264,12 +270,12 @@ def select_series_to_segment(
             ).get("KVP", 0.0)
         )
 
-        series_data.mean_ctdi_vol = dose_report[series_data.irradiation_event_uid][
-            "mean_ctdi_vol"
-        ]
-        series_data.dose_length_product = dose_report[
+        series_data.mean_ctdi_vol = dose_report.get(
             series_data.irradiation_event_uid
-        ]["dlp"]
+        ).get("mean_ctdi_vol", -1)
+        series_data.dose_length_product = dose_report.get(
+            series_data.irradiation_event_uid
+        ).get("dlp", -1)
 
     return selected_series
 
