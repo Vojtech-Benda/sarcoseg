@@ -93,6 +93,23 @@ class LabkeyAPI(APIWrapper):
             columns = columns.split(",")
         return [{col: row[col] for col in row if col in columns} for row in rows]
 
+    def _upload_data(
+        self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
+    ):
+        print(f"sending {len(rows)} rows")
+
+        response = None
+        if update_rows:
+            response = self.query.update_rows(
+                schema_name=schema_name, query_name=query_name, rows=rows
+            )
+        else:
+            response = self.query.insert_rows(
+                schema_name=schema_name, query_name=query_name, rows=rows
+            )
+
+        print(response)
+
 
 def labkey_from_dotenv() -> LabkeyAPI:
     config = dotenv_values()
