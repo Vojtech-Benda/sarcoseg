@@ -28,9 +28,9 @@ CONTRAST_PHASES_PATTERN = re.compile(
 
 def preprocess_dicom_study(
     input_dir: Union[str, Path],
-    output_dir: Union[str, Path] = "./inputs",
+    output_dir: Union[str, Path] = Path("./inputs"),
     labkey_data: dict = None,
-) -> None:
+) -> StudyData:
     print("preprocessing DICOM files")
 
     if isinstance(input_dir, str):
@@ -51,7 +51,7 @@ def preprocess_dicom_study(
 
     print(f"found {len(study_data.series_dict)} valid series for segmentation")
     print(
-        f"saving id `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
+        f"saving ID `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
     )
 
     output_study_dir = Path(output_dir, study_data.study_inst_uid)
@@ -70,6 +70,7 @@ def preprocess_dicom_study(
         write_series_as_nifti(output_study_dir, series_data)
 
     print("-" * 25)
+    return study_data
 
 
 def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
@@ -282,7 +283,8 @@ def extract_dose_values(dose_report: str) -> dict[str, float]:
     event_to_dose = {}
 
     if ds.Modality != "SR":
-        raise ValueError("file is not dose report")
+        print(f"file {dose_report} is not dose report")
+        return {}
 
     def walk_content(seq, current_event=None):
         for item in seq:
@@ -362,7 +364,7 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
         columns=df.columns,
     )
     print(
-        f"id `{study.patient_id}` study instance uid `{study.study_inst_uid}` ({len(df.series_inst_uid.unique())} series) written DICOM tags to {filepath}"
+        f"DICOM tags for ID `{study.patient_id}` study instance uid `{study.study_inst_uid}` written to {filepath}"
     )
 
 
