@@ -25,8 +25,11 @@ class PacsAPI:
         self.aem = aem if aem else aet
         self.store_port = store_port
 
-    def movescu(self, study_uid: str, download_directory: str):
-        if os.path.exists(download_directory) and os.listdir(download_directory) != 0:
+    def _movescu(self, study_uid: str, download_directory: str):
+        if (
+            os.path.exists(download_directory)
+            and len(os.listdir(download_directory)) != 0
+        ):
             print(
                 f"skipping existing directory with DICOM files for study uid {study_uid}"
             )
@@ -35,6 +38,7 @@ class PacsAPI:
         os.makedirs(download_directory, exist_ok=True)
 
         args = [
+            movescu.__file__,
             self.ip,
             str(self.port),
             "-aec",
@@ -55,7 +59,7 @@ class PacsAPI:
         ]
 
         print(f"running C-MOVE for StudyInstanceUID: {study_uid}")
-        movescu.main(args)
+        exit_code = subprocess.run(args, capture_output=True, text=True)
 
         if len(os.listdir(download_directory)) == 0:
             print(f"C-MOVE failed downloading data for StudyInstanceUID: {study_uid}")
