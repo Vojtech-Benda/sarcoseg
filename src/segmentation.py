@@ -24,7 +24,7 @@ def segment_ct_study(
     slices_num: int = 0,
     save_mask_overlays: bool = False,
     collect_metric_results: bool = False,
-):
+) -> list[MetricsData]:
     # case_dirs = list(Path(input_dir).glob("*/"))
     # print(f"found {len(case_dirs)} case directories")
 
@@ -122,6 +122,8 @@ def segment_ct_study(
     if collect_metric_results:
         collect_all_metric_results(output_dir)
 
+    return metric_results_list
+
 
 def segment_spine(
     input_nifti_path: Union[str, Path],
@@ -150,7 +152,7 @@ def segment_spine(
             Segmentation runtime, defaults to 0.0 if segmentation file exists.
     """
 
-    if not isinstance(output_dir, Path):
+    if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
@@ -184,7 +186,7 @@ def segment_spine(
 def segment_tissues(
     tissue_volume_path: Union[Path, str], case_output_dir: Union[Path, str]
 ) -> tuple[ImageData, float]:
-    if not isinstance(case_output_dir, Path):
+    if isinstance(case_output_dir, str):
         case_output_dir = Path(case_output_dir)
 
     print(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
@@ -226,8 +228,10 @@ def write_metric_results(metric_results: list[MetricsData], output_study_dir: Pa
     df.to_csv(filepath, sep=",", na_rep=nan, columns=df.columns, index=None)
 
 
-def collect_all_metric_results(input_dir: Union[str, Path]):
-    if not isinstance(input_dir, Path):
+def collect_all_metric_results(
+    input_dir: Union[str, Path], write_to_csv: bool = False
+) -> pd.DataFrame:
+    if isinstance(input_dir, str):
         input_dir = Path(input_dir)
 
     metrics_files = list(input_dir.rglob("metric_results.csv"))
@@ -240,8 +244,13 @@ def collect_all_metric_results(input_dir: Union[str, Path]):
         ignore_index=True,
     )
 
-    filepath = Path(input_dir, "all_metric_results.csv")
-    df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
     print(
-        f"written all metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+        f"collected metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series)"
     )
+
+    if write_to_csv:
+        filepath = Path(input_dir, "all_metric_results.csv")
+        df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
+        print(f"written results to `{filepath}`")
+
+    return df
