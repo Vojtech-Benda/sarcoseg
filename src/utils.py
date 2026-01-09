@@ -2,6 +2,7 @@ import nibabel as nib
 import numpy as np
 import skimage as sk
 import pandas as pd
+import os
 
 from time import perf_counter
 from pathlib import Path
@@ -293,3 +294,11 @@ def read_volume(path: Union[Path, str]):
     volume = nib.as_closest_canonical(nib.load(path))
     spacing = volume.header.get_zooms()
     return ImageData(image=volume, spacing=spacing, path=path)
+
+
+def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
+    if isinstance(dirpath, str):
+        dirpath = Path(dirpath)
+
+    print(f"removing empty segmentation directory {dirpath}")
+    os.removedirs(dirpath)
