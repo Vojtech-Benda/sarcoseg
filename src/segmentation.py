@@ -57,11 +57,16 @@ def segment_ct_study(
     metric_results_list: list[MetricsData] = []
 
     for series_file in series_nifti_files:
+        # FIXME: POSSIBLY REMOVE LINES BELOW
+        # input_volume.nii.gz already present in output dir
+        # just construct the series directory as destination
         # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
         case_output_dir = Path(output_dir, *series_file.parent.parts[-2:])
         case_output_dir.mkdir(exist_ok=True, parents=True)
 
-        shutil.copy2(series_file, case_output_dir.joinpath(series_file.name))
+        # FIXME: REMOVE LINE BELOW
+        # no need to copy, input_volume.nii.gz already present in output dir
+        # shutil.copy2(series_file, case_output_dir.joinpath(series_file.name))
 
         input_volume_data: ImageData = utils.read_volume(series_file)
 

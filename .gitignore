@@ -15,6 +15,7 @@ src/fnosarcoseg.egg-info/
 build/
 tests/data
 models/
+download-test/
 
 # ide dirs
 .vscode/*
