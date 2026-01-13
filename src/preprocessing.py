@@ -57,11 +57,11 @@ def preprocess_dicom_study(
 
     print(f"found {len(study_data.series_dict)} valid series for segmentation")
     print(
-        f"saving ID `{study_data.patient_id}`, study instance uid `{study_data.study_inst_uid}`"
+        f"saving ID {study_data.patient_id}, study instance uid `{study_data.study_inst_uid}`"
     )
 
-    output_study_dir = Path(output_dir, study_data.study_inst_uid)
-    output_study_dir.mkdir(exist_ok=True, parents=True)
+    # output_study_dir = Path(output_dir, study_data.study_inst_uid)
+    output_dir.mkdir(exist_ok=True, parents=True)
 
     # if query_labkey:
     # labkey_data = database.query_patient_data(
@@ -70,10 +70,11 @@ def preprocess_dicom_study(
     #     max_rows=1,
     # )
 
-    write_dicom_tags(output_study_dir, study_data, labkey_data)
+    print("overwriting outputs")
+    write_dicom_tags(output_dir, study_data, labkey_data)
 
     for series_data in study_data.series_dict.values():
-        write_series_as_nifti(output_study_dir, series_data)
+        write_series_as_nifti(output_dir, series_data)
 
     print("-" * 25)
     return study_data
@@ -370,7 +371,7 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
         columns=df.columns,
     )
     print(
-        f"DICOM tags for ID `{study.patient_id}` study instance uid `{study.study_inst_uid}` written to {filepath}"
+        f"DICOM tags for ID `{study.patient_id}` study instance uid `{study.study_inst_uid}` written to `{filepath}`"
     )
 
 

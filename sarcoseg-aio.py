@@ -97,13 +97,14 @@ def main(args: argparse.Namespace):
         {
             "PARTICIPANT": "PAT0003",
             "STUDY_INSTANCE_UID": "1.3.6.1.4.1.36302.1.1.2.67388.4692994",
-            "VYSKA_PAC.": "180.0",
+            "VYSKA_PAC.": "170.0",
         },
     ]
 
     for labkey_data in queried_labkey_data:
         study_uid = labkey_data.get("STUDY_INSTANCE_UID")
         input_dir = Path(args.input_dir, study_uid)
+        output_study_dir = Path(output_dir, study_uid)
         # status = pacs_api._movescu(
         #     study_uid,
         #     str(input_dir),
@@ -113,12 +114,14 @@ def main(args: argparse.Namespace):
         #     continue
 
         dicom_study_tags = preprocessing.preprocess_dicom_study(
-            input_dir, output_dir, labkey_data
+            input_dir,
+            output_study_dir,
+            labkey_data,
         )
 
         print(dicom_study_tags.patient_id, dicom_study_tags.study_inst_uid)
         all_metrics_results = segmentation.segment_ct_study(
-            input_dir, output_dir, save_mask_overlays=True
+            output_study_dir, output_study_dir, save_mask_overlays=True
         )
 
         """
