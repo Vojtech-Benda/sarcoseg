@@ -3,6 +3,7 @@ import numpy as np
 import skimage as sk
 import pandas as pd
 import os
+import shutil
 
 from time import perf_counter
 from pathlib import Path
@@ -302,3 +303,7 @@ def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
 
     print(f"removing empty segmentation directory {dirpath}")
     os.removedirs(dirpath)
+
+
+def remove_dicom_dir(dirpath: Union[str, Path]):
+    shutil.rmtree(dirpath)

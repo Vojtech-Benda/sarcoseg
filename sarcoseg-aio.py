@@ -7,7 +7,7 @@ from datetime import datetime
 from src import preprocessing
 from src import segmentation
 from src.network import pacs, database
-from src.utils import remove_empty_segmentation_dir
+from src.utils import remove_empty_segmentation_dir, remove_dicom_dir
 
 
 def get_args():
@@ -141,6 +141,9 @@ def main(args: argparse.Namespace):
             # )
            
         """
+
+        if args.remove_dicom_files:
+            remove_dicom_dir(input_dir)
 
     if not any(output_dir.iterdir()):
         remove_empty_segmentation_dir(output_dir)
