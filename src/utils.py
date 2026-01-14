@@ -298,12 +298,10 @@ def read_volume(path: Union[Path, str]):
 
 
 def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
-    if isinstance(dirpath, str):
-        dirpath = Path(dirpath)
-
-    print(f"removing empty segmentation directory {dirpath}")
-    os.removedirs(dirpath)
+    print(f"removing empty segmentation directory `{dirpath}`")
+    shutil.rmtree(dirpath)
 
 
 def remove_dicom_dir(dirpath: Union[str, Path]):
+    print(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
