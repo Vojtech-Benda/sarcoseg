@@ -6,8 +6,8 @@ from datetime import datetime
 
 from src import preprocessing
 from src import segmentation
+from src import utils
 from src.network import pacs, database
-from src.utils import remove_empty_segmentation_dir, remove_dicom_dir
 
 
 def get_args():
@@ -75,60 +75,67 @@ def main(args: argparse.Namespace):
     if not patient_id_list:
         sys.exit(-1)
 
-    # labkey_api = database.labkey_from_dotenv()
-    # if not labkey_api.is_labkey_reachable():
-    #     warnings.warn("Labkey is unreachable")
-    #     sys.exit(-1)
+    labkey_api = database.labkey_from_dotenv()
+    if not labkey_api.is_labkey_reachable():
+        warnings.warn("Labkey is unreachable")
+        sys.exit(-1)
 
-    # queried_labkey_data: list[dict] = labkey_api._select_rows(
-    #     schema_name="lists",
-    #     query_name="RDG-CT-Sarko-All",
-    #     columns="STUDY_INSTANCE_UID,VYSKA_PAC.,PARTICIPANT",
-    #     sanitize_rows=True,
-    # )
+    queried_labkey_data: list[database.LabkeyRow] = labkey_api._select_rows(
+        schema_name="lists",
+        query_name="RDG-CT-Sarko-All",
+        columns=[
+            "RODNE_CISLO",
+            "CAS_VYSETRENI",
+            "STUDY_INSTANCE_UID",
+            "VYSKA_PAC.",
+            "PARTICIPANT",
+            "PACS_CISLO",
+        ],
+        filter_dict={"RODNE_CISLO": patient_id_list},
+        sanitize_rows=True,
+    )
 
-    # if queried_labkey_data is None:
-    #     warnings.warn("exiting sarcoseg")
-    #     warnings.warn(
-    #         "reason: no labkey response data with queried study instance uids"
-    #     )
-    #     sys.exit(-1)
+    if queried_labkey_data is None:
+        warnings.warn("exiting sarcoseg")
+        warnings.warn(
+            "reason: no labkey response data with queried study instance uids"
+        )
+        sys.exit(-1)
 
+    pacs_api = pacs.pacs_from_dotenv(verbose=verbose)
     output_dir = Path(args.output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     output_dir.mkdir(exist_ok=True)
 
-    queried_labkey_data = [
-        {
-            "PARTICIPANT": "PAT0002",
-            "STUDY_INSTANCE_UID": "1.3.6.1.4.1.36302.1.1.2.67386.4681372",
-            "VYSKA_PAC.": "180.0",
-        },
-        {
-            "PARTICIPANT": "PAT0003",
-            "STUDY_INSTANCE_UID": "1.3.6.1.4.1.36302.1.1.2.67388.4692994",
-            "VYSKA_PAC.": "170.0",
-        },
-    ]
-
     for labkey_data in queried_labkey_data:
-        study_uid = labkey_data.get("STUDY_INSTANCE_UID")
-        input_dir = Path(args.input_dir, study_uid)
-        output_study_dir = Path(output_dir, study_uid)
-        # status = pacs_api._movescu(
-        #     study_uid,
-        #     str(input_dir),
-        # )
+        input_study_dir = Path(args.input_dir, labkey_data.study_instance_uid)
 
-        # if status == -1:
-        #     continue
+        if not input_study_dir.exists():
+            print(
+                f"input study directory `{input_study_dir}` not found, trying to download from PACS instead"
+            )
 
+            status = pacs_api._movescu(
+                labkey_data.study_instance_uid,
+                str(input_study_dir),
+            )
+
+            if status == -1:
+                continue
+
+        output_study_dir = Path(output_dir, labkey_data.study_instance_uid)
+
+        print(
+            f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.patient_id}"
+        )
         dicom_study_tags = preprocessing.preprocess_dicom_study(
-            input_dir,
+            input_study_dir,
             output_study_dir,
             labkey_data,
         )
 
-        print(dicom_study_tags.patient_id, dicom_study_tags.study_inst_uid)
+        print(
+            f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.patient_id}"
+        )
         all_metrics_results = segmentation.segment_ct_study(
             output_study_dir, output_study_dir, save_mask_overlays=True
         )
@@ -152,10 +159,10 @@ def main(args: argparse.Namespace):
         """
 
         if args.remove_dicom_files:
-            remove_dicom_dir(input_dir)
+            utils.remove_dicom_dir(input_study_dir)
 
     if not any(output_dir.iterdir()):
-        remove_empty_segmentation_dir(output_dir)
+        utils.remove_empty_segmentation_dir(output_dir)
 
 
 if __name__ == "__main__":

@@ -64,11 +64,11 @@ def preprocess_dicom_study(
     output_dir.mkdir(exist_ok=True, parents=True)
 
     # if query_labkey:
-    # labkey_data = database.query_patient_data(
-    #     study_data.patient_id,
-    #     query_columns=["PARTICIPANT", "VYSKA_PAC."],
-    #     max_rows=1,
-    # )
+    #     labkey_data = database.query_patient_data(
+    #         study_data.patient_id,
+    #         query_columns=["PARTICIPANT", "VYSKA_PAC."],
+    #         max_rows=1,
+    #     )
 
     print("overwriting outputs")
     write_dicom_tags(output_dir, study_data, labkey_data)

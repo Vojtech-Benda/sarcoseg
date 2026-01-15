@@ -25,13 +25,13 @@ class PacsAPI:
         self.aem = aem if aem else aet
         self.store_port = store_port
 
-    def _movescu(self, study_uid: str, download_directory: str):
+    def _movescu(self, study_inst_uid: str, download_directory: str):
         if (
             os.path.exists(download_directory)
             and len(os.listdir(download_directory)) != 0
         ):
             print(
-                f"skipping existing directory with DICOM files for study uid {study_uid}"
+                f"skipping existing directory with DICOM files for study uid {study_inst_uid}"
             )
             return 0
 
@@ -55,20 +55,22 @@ class PacsAPI:
             "-k",
             "QueryRetrieveLevel=STUDY",
             "-k",
-            f"StudyInstanceUID={study_uid}",
+            f"StudyInstanceUID={study_inst_uid}",
         ]
 
-        print(f"running C-MOVE for StudyInstanceUID: {study_uid}")
-        exit_code = subprocess.run(args, capture_output=True, text=True)
+        print(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
+        ret = subprocess.run(args, capture_output=True, text=True)
 
         if len(os.listdir(download_directory)) == 0:
-            print(f"C-MOVE failed downloading data for StudyInstanceUID: {study_uid}")
+            print(
+                f"C-MOVE failed downloading data for StudyInstanceUID: {study_inst_uid}"
+            )
             return -1
 
         print("finished C-MOVE")
         return 0
 
-    def echoscu(self, verbose: bool = False):
+    def _echoscu(self, verbose: bool = False):
         args = [
             sys.executable,
             echoscu.__file__,
@@ -83,7 +85,11 @@ class PacsAPI:
         if verbose:
             args.append("-v")
 
-        echoscu.main(args)
+        ret = subprocess.run(args, capture_output=True, text=True)
+        print(ret.returncode)
+
+        if verbose:
+            print(ret.stdout)
 
 
 def pacs_from_dotenv(verbose: bool = False):
@@ -103,4 +109,4 @@ def pacs_from_dotenv(verbose: bool = False):
 
 if __name__ == "__main__":
     pacs = PacsAPI("localhost", 4242, "VOJTPC", "ORTHANC", 2000)
-    pacs.echoscu()
+    pacs._echoscu()
