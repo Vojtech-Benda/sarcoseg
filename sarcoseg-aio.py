@@ -46,6 +46,13 @@ def get_args():
         default="./outputs",
     )
     parser.add_argument(
+        "-pl",
+        "--patient-list",
+        type=str,
+        help="path to list of labkey data (.csv/.txt)",
+        required=False,
+    )
+    parser.add_argument(
         "--upload-labkey",
         action="store_true",
         help="upload preprocessing and segmentation data to labkey",
@@ -64,7 +71,9 @@ def get_args():
 def main(args: argparse.Namespace):
     verbose = args.verbose
 
-    # pacs_api = pacs.pacs_from_dotenv(verbose=verbose)
+    patient_id_list = utils.read_patient_list(args.patient_list)
+    if not patient_id_list:
+        sys.exit(-1)
 
     # labkey_api = database.labkey_from_dotenv()
     # if not labkey_api.is_labkey_reachable():

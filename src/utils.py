@@ -287,6 +287,30 @@ def compute_metrics(
     return metrics_data
 
 
+def read_patient_list(filepath: Union[str, Path]) -> Union[dict, None]:
+    if isinstance(filepath, str):
+        filepath = Path(filepath)
+
+    if not filepath.is_file():
+        print(f"patient list at `{filepath}` is not a file")
+        return None
+    if not filepath.exists():
+        print(f"patient list at `{filepath}` not found")
+        return None
+
+    suffix = filepath.suffix
+    if suffix == ".csv":
+        df = pd.read_csv(
+            filepath, index_col=False, header=0, dtype=str, usecols=["patient_id"]
+        )
+    elif suffix == ".xlsx" or suffix == ".xls":
+        df = pd.read_excel(
+            filepath, index_col=False, header=0, dtype=str, usecols=["patient_id"]
+        )
+
+    return df.patient_id.to_list()
+
+
 def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
     return df_tags.loc[df_tags["series_inst_uid"] == series_inst_uid].iloc[0].to_dict()
 

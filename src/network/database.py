@@ -4,7 +4,8 @@ import requests
 from pathlib import Path
 from typing import Union
 import pandas as pd
-from src.classes import LabkeyData
+
+# from src.classes import LabkeyData
 from dotenv import dotenv_values
 from dataclasses import dataclass
 
@@ -16,9 +17,10 @@ API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_s
 class LabkeyRow:
     patient_id: str
     study_date: str
+    participant: str
     study_instance_uid: str
+    pacs_number: str = None
     patient_weight: float = None
-    participant: str = None
 
 
 class LabkeyAPI(APIWrapper):
@@ -61,21 +63,31 @@ class LabkeyAPI(APIWrapper):
         query_name: str,
         columns: list[str] | str = None,
         max_rows: int = -1,
+        filter_dict: dict[str, list[str]] = None,
         sanitize_rows: bool = False,
     ) -> list[dict] | None:
-        # if isinstance(columns, list):
-        #     columns = ",".join(columns)
-
         print("labkey query:")
         print(
             f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
         )
+
+        filter_array = None
+        if filter_dict:
+            filter_array = [
+                QueryFilter(
+                    column,
+                    ";".join(values),
+                    QueryFilter.Types.EQUALS_ONE_OF,
+                )
+                for column, values in filter_dict.items()
+            ]
 
         response = self.query.select_rows(
             schema_name=schema_name,
             query_name=query_name,
             columns=",".join(columns) if isinstance(columns, list) else columns,
             max_rows=max_rows,
+            filter_array=filter_array,
         )
 
         rows = response.get("rows", [])
@@ -91,7 +103,23 @@ class LabkeyAPI(APIWrapper):
     def sanitize_response_data(self, rows: list[dict], columns: list[str] | str):
         if isinstance(columns, str):
             columns = columns.split(",")
-        return [{col: row[col] for col in row if col in columns} for row in rows]
+
+        ret: list[LabkeyRow] = []
+        for row in rows:
+            patient_data = LabkeyRow(
+                patient_id=row.get("RODNE_CISLO"),
+                study_date=row.get("CAS_VYSETRENI").split(" ")[
+                    0
+                ],  # take date, discard time ["date", "time"]
+                participant=row.get("PARTICIPANT"),
+                study_instance_uid=row.get("STUDY_INSTANCE_UID"),
+                pacs_number=row.get("PACS_CISLO"),
+                patient_weight=row.get("VYSKA_PAC."),
+            )
+
+            ret.append(patient_data)
+        # return [{col: row[col] for col in row if col in columns} for row in rows]
+        return ret
 
     def _upload_data(
         self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
