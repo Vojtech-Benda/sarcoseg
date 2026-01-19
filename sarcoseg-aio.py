@@ -50,7 +50,7 @@ def get_args():
         "--patient-list",
         type=str,
         help="path to list of labkey data (.csv/.txt)",
-        required=False,
+        required=True,
     )
     parser.add_argument(
         "--upload-labkey",
@@ -81,7 +81,7 @@ def main(args: argparse.Namespace):
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    queried_labkey_data: list[database.LabkeyRow] = labkey_api._select_rows(
+    queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
@@ -106,7 +106,7 @@ def main(args: argparse.Namespace):
     output_dir = Path(args.output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     output_dir.mkdir(exist_ok=True)
 
-    for labkey_data in queried_labkey_data:
+    for labkey_data in queried_labkey_response:
         input_study_dir = Path(args.input_dir, labkey_data.study_instance_uid)
 
         if not input_study_dir.exists():
