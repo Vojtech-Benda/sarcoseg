@@ -66,19 +66,19 @@ def segment_ct_study(
 
     metric_results_list: list[MetricsData] = []
 
-    for series_file in series_nifti_files:
+    for series_filepath in series_nifti_filepaths:
         # FIXME: POSSIBLY REMOVE LINES BELOW
         # input_volume.nii.gz already present in output dir
         # just construct the series directory as destination
         # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
-        series_output_dir = series_file.parent
+        series_output_dir = series_filepath.parent
         # case_output_dir.mkdir(exist_ok=True, parents=True)
 
         # FIXME: REMOVE LINE BELOW
         # no need to copy, input_volume.nii.gz already present in output dir
         # shutil.copy2(series_file, case_output_dir.joinpath(series_file.name))
 
-        input_volume_data: ImageData = utils.read_volume(series_file)
+        input_volume_data: ImageData = utils.read_volume(series_filepath)
 
         # series_inst_uid = case_output_dir.parts[-1]
         series_inst_uid = series_output_dir.parts[-1]
@@ -86,7 +86,9 @@ def segment_ct_study(
             f"running segmentation on CT series `{series_inst_uid}` of study `FILL IN STUDY_INST_UID!!`"
         )
         # spine_mask_data, spine_duration = segment_spine(series_file, case_output_dir)
-        spine_mask_data, spine_duration = segment_spine(series_file, series_output_dir)
+        spine_mask_data, spine_duration = segment_spine(
+            series_filepath, series_output_dir
+        )
 
         tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
             input_volume_data.image,

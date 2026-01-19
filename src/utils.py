@@ -115,7 +115,7 @@ def extract_slices(
         FileNotFoundError: If segmented spine mask is not found.
 
     Returns:
-        tuple[Nifti1Image, Path, dict[str, NDArray], float]: _description_
+
     """
     if not isinstance(spine_mask, Nifti1Image):
         if Path(spine_mask).exists():
