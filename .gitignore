@@ -16,6 +16,9 @@ build/
 tests/data
 models/
 download-test/
+*test*/
+*test*.*
+labkey_filter.py
 
 # ide dirs
 .vscode/*
@@ -24,6 +27,7 @@ download-test/
 # pycache
 __pycache__
 
+# other files
 *.nii
 *.nii.gz
 *.json
