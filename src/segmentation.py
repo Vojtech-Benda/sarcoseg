@@ -14,6 +14,10 @@ from src import visualization
 from src import utils
 from src.utils import DEFAULT_VERTEBRA_CLASSES
 from src.classes import ImageData, MetricsData
+from src import slogger
+
+
+logger = slogger.get_logger(__name__)
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
@@ -54,10 +58,10 @@ def segment_ct_study(
         dtype={"patient_id": str, "vyska_pac.": float},
     )
 
-    series_nifti_files = list(input_dir.rglob("*.nii.gz"))
-    print("-" * 25)
-    print(
-        f"\nfound {len(series_nifti_files)} volumes to segment spine for study `{input_dir.name}`"
+    series_nifti_filepaths = list(input_dir.rglob("input_volume.nii.gz"))
+    logger.info("-" * 25)
+    logger.info(
+        f"\nfound {len(series_nifti_filepaths)} volumes to segment spine for study `{input_dir.name}`"
     )
 
     metric_results_list: list[MetricsData] = []
@@ -78,7 +82,9 @@ def segment_ct_study(
 
         # series_inst_uid = case_output_dir.parts[-1]
         series_inst_uid = series_output_dir.parts[-1]
-        print(f"running segmentation on `{series_inst_uid}`")
+        logger.info(
+            f"running segmentation on CT series `{series_inst_uid}` of study `FILL IN STUDY_INST_UID!!`"
+        )
         # spine_mask_data, spine_duration = segment_spine(series_file, case_output_dir)
         spine_mask_data, spine_duration = segment_spine(series_file, series_output_dir)
 
@@ -171,11 +177,11 @@ def segment_spine(
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
 
-    print(f"\nsegmenting vertebrae for {input_nifti_path.name}")
+    logger.info(f"\nsegmenting vertebrae for {input_nifti_path.name}")
 
     if not vert_classes:
         vert_classes = list(DEFAULT_VERTEBRA_CLASSES.keys())
-        print(f"vert_classes is None, using default: {vert_classes}")
+        logger.warning(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
     spine_mask: nib.Nifti1Image = totalsegmentator(
@@ -190,7 +196,7 @@ def segment_spine(
     )
 
     duration = perf_counter() - start
-    print(f"spine segmentation finised in {duration:.2f} seconds")
+    logger.info(f"spine segmentation finised in {duration:.2f} seconds")
 
     spine_mask = nib.as_closest_canonical(spine_mask)
     spacing = spine_mask.header.get_zooms()
@@ -203,7 +209,7 @@ def segment_tissues(
     if isinstance(case_output_dir, str):
         case_output_dir = Path(case_output_dir)
 
-    print(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
+    logger.info(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
 
@@ -228,7 +234,7 @@ def segment_tissues(
     )
 
     duration = perf_counter() - start
-    print(f"tissue segmentation finished in {duration}")
+    logger.info(f"tissue segmentation finished in {duration}")
 
     tissue_mask: ImageData = utils.read_volume(output_filepath)
     return tissue_mask, duration
@@ -238,7 +244,7 @@ def write_metric_results(metric_results: list[MetricsData], output_study_dir: Pa
     df = pd.DataFrame([result._to_dict() for result in metric_results])
     filepath = output_study_dir.joinpath(f"metric_results_{output_study_dir.name}.csv")
     if filepath.exists():
-        print(f"overwriting existing metric_results.csv at `{filepath}`")
+        logger.info(f"overwriting existing metric_results.csv at `{filepath}`")
     df.to_csv(filepath, sep=",", na_rep=nan, columns=df.columns, index=None)
 
 
@@ -258,13 +264,13 @@ def collect_all_metric_results(
         ignore_index=True,
     )
 
-    print(
+    logger.info(
         f"collected metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series)"
     )
 
     if write_to_csv:
         filepath = Path(input_dir, "all_metric_results.csv")
         df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
-        print(f"written results to `{filepath}`")
+        logger.info(f"written results to `{filepath}`")
 
     return df

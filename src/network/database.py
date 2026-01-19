@@ -8,6 +8,9 @@ import pandas as pd
 # from src.classes import LabkeyData
 from dotenv import dotenv_values
 from dataclasses import dataclass
+from src import slogger
+
+logger = slogger.get_logger(__name__)
 
 
 API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_ssl=True)
@@ -51,9 +54,10 @@ class LabkeyAPI(APIWrapper):
         try:
             response = requests.get(url=hostname, timeout=5)
             if verbose:
-                print(f"{hostname} reachable: status {response.status_code}")
+                logger.info(f"{hostname} reachable: status {response.status_code}")
         except requests.exceptions.RequestException as e:
-            print(f"{hostname} unreachable: {e}")
+            logger.critical(f"{hostname} is unreachable")
+            logger.critical(f"{e}")
             return False
         return True
 
@@ -66,8 +70,8 @@ class LabkeyAPI(APIWrapper):
         filter_dict: dict[str, list[str]] = None,
         sanitize_rows: bool = False,
     ) -> list[dict] | None:
-        print("labkey query:")
-        print(
+        logger.info("labkey query:")
+        logger.info(
             f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
         )
 
@@ -91,9 +95,9 @@ class LabkeyAPI(APIWrapper):
         )
 
         rows = response.get("rows", [])
-        print(f"returned rows: {len(rows)}")
+        logger.info(f"returned rows: {len(rows)}")
         if len(rows) == 0:
-            print("no matching rows")
+            logger.warning("no matching rows")
             return None
 
         if sanitize_rows:
@@ -124,7 +128,7 @@ class LabkeyAPI(APIWrapper):
     def _upload_data(
         self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
     ):
-        print(f"sending {len(rows)} rows")
+        logger.info(f"sending {len(rows)} rows")
 
         response = None
         if update_rows:
@@ -136,7 +140,7 @@ class LabkeyAPI(APIWrapper):
                 schema_name=schema_name, query_name=query_name, rows=rows
             )
 
-        print(response)
+        logger.info(response)
 
 
 def labkey_from_dotenv() -> LabkeyAPI:
@@ -147,7 +151,7 @@ def labkey_from_dotenv() -> LabkeyAPI:
 def send_data(
     schema: str, query_name: str, rows: Union[list, dict], update_rows: bool = False
 ):
-    print(f"sending {len(rows)} rows")
+    logger.info(f"sending {len(rows)} rows")
     if update_rows:
         response = API_HANDLER.query.update_rows(
             schema_name=schema, query_name=query_name, rows=rows
@@ -158,7 +162,7 @@ def send_data(
         )
 
     if response["rowsAffected"] == 0:
-        print(f"labkey {query_name}: no rows affected")
+        logger.info(f"labkey {query_name}: no rows affected")
 
 
 def collect_data(data_path: str) -> Union[None, list]:

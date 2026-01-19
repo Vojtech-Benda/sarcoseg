@@ -1,6 +1,5 @@
 import sys
 import argparse
-import warnings
 from pathlib import Path
 from datetime import datetime
 
@@ -8,6 +7,7 @@ from src import preprocessing
 from src import segmentation
 from src import utils
 from src.network import pacs, database
+from src import slogger
 
 
 def get_args():
@@ -70,6 +70,7 @@ def get_args():
 
 def main(args: argparse.Namespace):
     verbose = args.verbose
+    main_logger = slogger.get_logger(__name__)
 
     patient_id_list = utils.read_patient_list(args.patient_list)
     if not patient_id_list:
@@ -77,7 +78,7 @@ def main(args: argparse.Namespace):
 
     labkey_api = database.labkey_from_dotenv()
     if not labkey_api.is_labkey_reachable():
-        warnings.warn("Labkey is unreachable")
+        main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
     queried_labkey_data: list[database.LabkeyRow] = labkey_api._select_rows(
@@ -95,10 +96,9 @@ def main(args: argparse.Namespace):
         sanitize_rows=True,
     )
 
-    if queried_labkey_data is None:
-        warnings.warn("exiting sarcoseg")
-        warnings.warn(
-            "reason: no labkey response data with queried study instance uids"
+    if queried_labkey_response is None:
+        main_logger.critical(
+            "quitting sarcoseg, labkey query response has no StudyInstanceUIDs"
         )
         sys.exit(-1)
 
@@ -110,7 +110,7 @@ def main(args: argparse.Namespace):
         input_study_dir = Path(args.input_dir, labkey_data.study_instance_uid)
 
         if not input_study_dir.exists():
-            print(
+            main_logger.info(
                 f"input study directory `{input_study_dir}` not found, trying to download from PACS instead"
             )
 
@@ -124,7 +124,7 @@ def main(args: argparse.Namespace):
 
         output_study_dir = Path(output_dir, labkey_data.study_instance_uid)
 
-        print(
+        main_logger.info(
             f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.patient_id}"
         )
         dicom_study_tags = preprocessing.preprocess_dicom_study(
@@ -133,7 +133,7 @@ def main(args: argparse.Namespace):
             labkey_data,
         )
 
-        print(
+        main_logger.info(
             f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.patient_id}"
         )
         all_metrics_results = segmentation.segment_ct_study(

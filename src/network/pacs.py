@@ -6,6 +6,9 @@ from pathlib import Path
 
 from pynetdicom.apps.echoscu import echoscu
 from pynetdicom.apps.movescu import movescu
+from src import slogger
+
+logger = slogger.get_logger(__name__)
 
 
 class PacsAPI:
@@ -30,7 +33,7 @@ class PacsAPI:
             os.path.exists(download_directory)
             and len(os.listdir(download_directory)) != 0
         ):
-            print(
+            logger.info(
                 f"skipping existing directory with DICOM files for study uid {study_inst_uid}"
             )
             return 0
@@ -58,16 +61,16 @@ class PacsAPI:
             f"StudyInstanceUID={study_inst_uid}",
         ]
 
-        print(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
+        logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
         ret = subprocess.run(args, capture_output=True, text=True)
 
         if len(os.listdir(download_directory)) == 0:
-            print(
+            logger.info(
                 f"C-MOVE failed downloading data for StudyInstanceUID: {study_inst_uid}"
             )
             return -1
 
-        print("finished C-MOVE")
+        logger.info("finished C-MOVE")
         return 0
 
     def _echoscu(self, verbose: bool = False):
@@ -86,17 +89,17 @@ class PacsAPI:
             args.append("-v")
 
         ret = subprocess.run(args, capture_output=True, text=True)
-        print(ret.returncode)
+        logger.info(ret.returncode)
 
         if verbose:
-            print(ret.stdout)
+            logger.info(ret.stdout)
 
 
 def pacs_from_dotenv(verbose: bool = False):
     config = dotenv_values()
 
     if verbose:
-        print(config)
+        logger.info(config)
 
     return PacsAPI(
         config["pacs_ip"],

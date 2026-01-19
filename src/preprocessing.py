@@ -11,8 +11,12 @@ import dcm2niix
 from statistics import mean
 from datetime import datetime
 
-from src.network import database
+# from src.network import database
 from src.classes import SeriesData, StudyData, LabkeyData
+from src import slogger
+
+
+logger = slogger.get_logger(__name__)
 
 
 SERIES_DESC_PATTERN = re.compile(
@@ -31,7 +35,7 @@ def preprocess_dicom_study(
     output_dir: Union[str, Path] = Path("./inputs"),
     labkey_data: dict = None,
 ) -> StudyData:
-    print("preprocessing DICOM files")
+    logger.info("preprocessing DICOM files")
 
     if isinstance(input_dir, str):
         input_dir = Path(input_dir)
@@ -46,42 +50,38 @@ def preprocess_dicom_study(
     dose_per_event = extract_dose_values(dose_report_path)
 
     if not dose_per_event:
-        print(
+        logger.warning(
             f"PatientID {study_data.patient_id}, study {study_data.study_inst_uid} does not have Dose Report"
         )
-        print(f"{dose_per_event=}")
+        logger.warning(f"{dose_per_event=}")
 
     study_data.series_dict = select_series_to_segment(
         files_by_series_uid, dose_report=dose_per_event
     )
 
-    print(f"found {len(study_data.series_dict)} valid series for segmentation")
-    print(
+    logger.info(f"found {len(study_data.series_dict)} valid series for segmentation")
+    logger.info(
         f"saving ID {study_data.patient_id}, study instance uid `{study_data.study_inst_uid}`"
     )
 
     # output_study_dir = Path(output_dir, study_data.study_inst_uid)
+
+    # if output_dir.exists():
+    #     logger.info("overwriting outputs")
+
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    # if query_labkey:
-    #     labkey_data = database.query_patient_data(
-    #         study_data.patient_id,
-    #         query_columns=["PARTICIPANT", "VYSKA_PAC."],
-    #         max_rows=1,
-    #     )
-
-    print("overwriting outputs")
     write_dicom_tags(output_dir, study_data, labkey_data)
 
     for series_data in study_data.series_dict.values():
         write_series_as_nifti(output_dir, series_data)
 
-    print("-" * 25)
+    logger.info("-" * 25)
     return study_data
 
 
 def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
-    print(
+    logger.info(
         f"series instance uid `{series_data.series_inst_uid}`\n"
         f"series description `{series_data.series_description}`\n"
         f"contrast phase `{series_data.has_contrast}`, type `{series_data.contrast_phase}`"
@@ -89,15 +89,15 @@ def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
 
     output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
     output_series_dir.mkdir(exist_ok=True, parents=True)
-    output_filepath = output_series_dir.joinpath("input_volume.nii.gz")
+    output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
 
     tmp_dir = Path(output_study_dir, f"tmp_{series_data.series_inst_uid}")
     tmp_dir.mkdir(exist_ok=True, parents=True)
     [shutil.copy2(file, tmp_dir / file.name) for file in series_data.filepaths]
 
     if output_filepath.exists():
-        print(
-            f"overwriting existing input_volume.nii.gz at `{str(output_filepath.parent)}`"
+        logger.info(
+            f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
         )
 
     try:
@@ -105,7 +105,7 @@ def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
             "-o",
             str(output_series_dir),
             "-f",
-            "input_volume",
+            "input_ct_volume",
             "-z",
             "y",
             "-b",
@@ -117,8 +117,8 @@ def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
         returncode = dcm2niix.main(args, capture_output=True, text=True)
         shutil.rmtree(tmp_dir)
     except RuntimeError as err:
-        print(err)
-    print(f"finished NifTI conversion with {returncode=}\n")
+        logger.error(err)
+    logger.info(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
@@ -190,7 +190,9 @@ def filter_dicom_files(
         else:
             files_by_uid[series_uid] = [file]
 
-    print(f"\nid '{study_data.patient_id}' filtered {len(files_by_uid.keys())} series")
+    logger.info(
+        f"\nid '{study_data.patient_id}' filtered {len(files_by_uid.keys())} series"
+    )
     return study_data, files_by_uid, dose_report_file
 
 
@@ -290,7 +292,7 @@ def extract_dose_values(dose_report: str) -> dict[str, float]:
     event_to_dose = {}
 
     if ds.Modality != "SR":
-        print(f"file {dose_report} is not dose report")
+        logger.warning(f"file {dose_report} is not dose report")
         return {}
 
     def walk_content(seq, current_event=None):
@@ -361,7 +363,7 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
     filepath = study_dir.joinpath(f"dicom_tags_{study.study_inst_uid}.csv")
 
     if filepath.exists():
-        print(f"overwriting existing dicom_tags.csv at `{str(filepath)}`")
+        logger.info(f"overwriting existing dicom_tags.csv at `{str(filepath)}`")
 
     df.to_csv(
         filepath,
@@ -370,7 +372,7 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
         index=False,
         columns=df.columns,
     )
-    print(
+    logger.info(
         f"DICOM tags for ID `{study.patient_id}` study instance uid `{study.study_inst_uid}` written to `{filepath}`"
     )
 
@@ -393,7 +395,7 @@ def collect_all_dicom_tags(
         ignore_index=True,
     )
 
-    print(
+    logger.info(
         f"collected DICOM tags of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series)"
     )
     if write_to_csv:
@@ -402,13 +404,13 @@ def collect_all_dicom_tags(
             f"all_dicom_tags_{datetime.now().strftime('%d-%m-%Y_%H-%M-%S')}.csv",
         )
         df.to_csv(filepath, sep=",", na_rep="nan", index=None, columns=df.columns)
-        print(f"DICOM tags written to `{filepath}`")
+        logger.info(f"DICOM tags written to `{filepath}`")
 
     return df
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 1:
-        print("Missing input directory")
+        logger.critical("Missing input directory")
         sys.exit(-1)
     preprocess_dicom_study(sys.argv[1])

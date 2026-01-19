@@ -2,6 +2,7 @@ import sys
 import argparse
 
 from src import segmentation
+from src import slogger
 
 
 def get_args():
@@ -72,6 +73,8 @@ def check_slices_num_value(arg):
 if __name__ == "__main__":
     args = get_args()
 
+    main_logger = slogger.get_logger(__name__)
+
     check_slices_num_value(args.slices_num)
 
     segmentation.segment_ct_study(
@@ -81,4 +84,4 @@ if __name__ == "__main__":
         save_mask_overlays=args.save_mask_overlays,
         collect_metric_results=args.collect_metric_results,
     )
-    print("finished CT segmentation")
+    main_logger.info("finished CT segmentation")

@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Union, Any
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
-from src.classes import ImageData, MetricsData, Centroids
 
+from src.classes import ImageData, MetricsData, Centroids
+from src import slogger
 
 DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_L1": 31,
@@ -26,6 +27,8 @@ DEFAULT_VERTEBRA_CLASSES = {
 DEFAULT_TISSUE_CLASSES = {"sat": 1, "vat": 2, "imat": 3, "muscle": 4}
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
+
+logger = slogger.get_logger(__name__)
 
 
 def get_vertebrae_body_centroids(
@@ -145,7 +148,7 @@ def extract_slices(
 
     if slices_range[0] < 0:
         slices_range[0] = 0
-        print(
+        logger.info(
             f"lower index {slices_range[0]} is outside lower extent for Z dimension, setting to 0"
         )
 
@@ -153,11 +156,11 @@ def extract_slices(
     if slices_range[1] > z_size:
         slices_range[1] = z_size
         slices_range[0] -= 1
-        print(
+        logger.info(
             f"upper index {slices_range[1]} is outside upper extent for Z dimension {z_size}, setting to {z_size}"
         )
 
-    print(
+    logger.info(
         f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}"
     )
 
@@ -168,15 +171,15 @@ def extract_slices(
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
-        print(f"file `{output_filepath}` exists, overwriting")
+        logger.info(f"file `{output_filepath}` exists, overwriting")
 
     try:
         nib.save(sliced_volume, output_filepath)
     except RuntimeError as err:
-        print(err)
+        logger.error(err)
 
     duration = perf_counter() - start
-    print(f"slice extraction finished in {duration} seconds")
+    logger.info(f"slice extraction finished in {duration} seconds")
 
     return (
         ImageData(image=sliced_volume, path=output_filepath),
@@ -234,7 +237,7 @@ def postprocess_tissue_masks(
     nib.save(out_nifti, processed_mask_path)  # overwrite segmented image
 
     duration = perf_counter() - start
-    print(f"tissue postprocessing finished in {duration:.2f} second")
+    logger.info(f"tissue postprocessing finished in {duration:.2f} second")
     return ImageData(
         image=out_nifti, spacing=mask_data.spacing, path=processed_mask_path
     ), duration
@@ -292,10 +295,10 @@ def read_patient_list(filepath: Union[str, Path]) -> Union[dict, None]:
         filepath = Path(filepath)
 
     if not filepath.is_file():
-        print(f"patient list at `{filepath}` is not a file")
+        logger.error(f"patient list at `{filepath}` is not a file")
         return None
     if not filepath.exists():
-        print(f"patient list at `{filepath}` not found")
+        logger.error(f"patient list at `{filepath}` not found")
         return None
 
     suffix = filepath.suffix
@@ -322,10 +325,10 @@ def read_volume(path: Union[Path, str]):
 
 
 def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
-    print(f"removing empty segmentation directory `{dirpath}`")
+    logger.info(f"removing empty segmentation directory `{dirpath}`")
     shutil.rmtree(dirpath)
 
 
 def remove_dicom_dir(dirpath: Union[str, Path]):
-    print(f"removing input DICOM directory `{dirpath}`")
+    logger.info(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
