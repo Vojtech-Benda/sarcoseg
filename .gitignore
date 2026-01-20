@@ -7,7 +7,6 @@ download/
 # environment items
 .vscode/
 .venv/
-.venv-test/
 
 # project files
 .env
@@ -15,9 +14,8 @@ src/fnosarcoseg.egg-info/
 build/
 tests/data
 models/
-download-test/
-*test*/
-*test*.*
+tests/input
+tests/download
 labkey_filter.py
 
 # ide dirs
@@ -31,3 +29,4 @@ __pycache__
 *.nii
 *.nii.gz
 *.json
+*.ipynb
