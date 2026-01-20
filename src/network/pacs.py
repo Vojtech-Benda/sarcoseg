@@ -89,10 +89,15 @@ class PacsAPI:
             args.append("-v")
 
         ret = subprocess.run(args, capture_output=True, text=True)
-        logger.info(ret.returncode)
+        logger.info(f"ECHOSCU return code: {ret.returncode}")
 
         if verbose:
-            logger.info(ret.stdout)
+            if ret.stdout:
+                logger.info(f"ECHOSCU stdout: {ret.stdout}")
+            if ret.stderr:
+                logger.info(f"ECHOSCU stderr: {ret.stderr}")
+        print(ret)
+        return ret
 
 
 def pacs_from_dotenv(verbose: bool = False):
