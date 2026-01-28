@@ -26,7 +26,12 @@ class Pacs(unittest.TestCase):
             self.fail(f"given StudyInstanceUID is not valid: `{self.STUDY_INST_UID}`")
 
         download_dir = Path(f"./tests/download/{self.STUDY_INST_UID}")
-        self.api._movescu(self.STUDY_INST_UID, download_dir)
+
+        if not download_dir.exists() and list(download_dir.rglob("*")) != 0:
+            print(
+                f"input study directory {self.STUDY_INST_UID} not found, trying to download from PACS instead"
+            )
+            self.api._movescu(self.STUDY_INST_UID, download_dir)
 
         files = list(download_dir.rglob("*"))
 

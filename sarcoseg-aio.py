@@ -109,7 +109,7 @@ def main(args: argparse.Namespace):
     for labkey_data in queried_labkey_response:
         input_study_dir = Path(args.input_dir, labkey_data.study_instance_uid)
 
-        if not input_study_dir.exists():
+        if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
             main_logger.info(
                 f"input study directory `{input_study_dir}` not found, trying to download from PACS instead"
             )

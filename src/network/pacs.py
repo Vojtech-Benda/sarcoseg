@@ -28,15 +28,15 @@ class PacsAPI:
         self.aem = aem if aem else aet
         self.store_port = store_port
 
-    def _movescu(self, study_inst_uid: str, download_directory: str):
-        if (
-            os.path.exists(download_directory)
-            and len(os.listdir(download_directory)) != 0
-        ):
-            logger.info(
-                f"skipping existing directory with DICOM files for study uid {study_inst_uid}"
-            )
-            return 0
+    def _movescu(self, study_inst_uid: str, download_directory: str | Path):
+        if isinstance(download_directory, str):
+            download_directory = Path(download_directory)
+
+        # if download_directory.exists() and list(download_directory.rglob("*")) != 0:
+        #     logger.info(
+        #         f"skipping existing directory with DICOM files for StudyInstanceUID `{study_inst_uid}`"
+        #     )
+        #     return 0
 
         os.makedirs(download_directory, exist_ok=True)
 
@@ -96,7 +96,6 @@ class PacsAPI:
                 logger.info(f"ECHOSCU stdout: {ret.stdout}")
             if ret.stderr:
                 logger.info(f"ECHOSCU stderr: {ret.stderr}")
-        print(ret)
         return ret
 
 
