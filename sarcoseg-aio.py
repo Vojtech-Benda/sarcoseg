@@ -69,6 +69,8 @@ def get_args():
 
 
 def main(args: argparse.Namespace):
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
     verbose = args.verbose
     main_logger = slogger.get_logger(__name__)
 
@@ -81,20 +83,22 @@ def main(args: argparse.Namespace):
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
-        schema_name="lists",
-        query_name="RDG-CT-Sarko-All",
-        columns=[
-            "RODNE_CISLO",
-            "CAS_VYSETRENI",
-            "STUDY_INSTANCE_UID",
-            "VYSKA_PAC.",
-            "PARTICIPANT",
-            "PACS_CISLO",
-        ],
-        filter_dict={"RODNE_CISLO": patient_id_list},
-        sanitize_rows=True,
-    )
+    # queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
+    #     schema_name="lists",
+    #     query_name="RDG-CT-Sarko-All",
+    #     columns=[
+    #         "RODNE_CISLO",
+    #         "CAS_VYSETRENI",
+    #         "STUDY_INSTANCE_UID",
+    #         "VYSKA_PAC.",
+    #         "PARTICIPANT",
+    #         "PACS_CISLO",
+    #     ],
+    #     filter_dict={"RODNE_CISLO": patient_id_list},
+    #     sanitize_rows=True,
+    # )
+
+    queried_labkey_response = [database.LabkeyRow()]
 
     if queried_labkey_response is None:
         main_logger.critical(
@@ -103,7 +107,7 @@ def main(args: argparse.Namespace):
         sys.exit(-1)
 
     pacs_api = pacs.pacs_from_dotenv(verbose=verbose)
-    output_dir = Path(args.output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 
     for labkey_data in queried_labkey_response:
