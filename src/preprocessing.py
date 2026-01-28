@@ -12,7 +12,7 @@ from statistics import mean
 from datetime import datetime
 
 # from src.network import database
-from src.classes import SeriesData, StudyData, LabkeyData
+from src.classes import SeriesData, StudyData
 from src import slogger
 
 
@@ -63,11 +63,6 @@ def preprocess_dicom_study(
     logger.info(
         f"saving ID {study_data.patient_id}, study instance uid `{study_data.study_inst_uid}`"
     )
-
-    # output_study_dir = Path(output_dir, study_data.study_inst_uid)
-
-    # if output_dir.exists():
-    #     logger.info("overwriting outputs")
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
