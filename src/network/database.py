@@ -37,6 +37,7 @@ class LabkeyAPI(APIWrapper):
         api_key=None,
         disable_csrf=False,
         allow_redirects=False,
+        verbose=False,
     ):
         super().__init__(
             domain,
@@ -48,12 +49,13 @@ class LabkeyAPI(APIWrapper):
             disable_csrf,
             allow_redirects,
         )
+        self.verbose = verbose
 
-    def is_labkey_reachable(self, verbose=False):
+    def is_labkey_reachable(self):
         hostname = self.server_context.hostname
         try:
             response = requests.get(url=hostname, timeout=5)
-            if verbose:
+            if self.verbose:
                 logger.info(f"{hostname} reachable: status {response.status_code}")
         except requests.exceptions.RequestException as e:
             logger.critical(f"{hostname} is unreachable")
@@ -143,9 +145,9 @@ class LabkeyAPI(APIWrapper):
         logger.info(response)
 
 
-def labkey_from_dotenv() -> LabkeyAPI:
+def labkey_from_dotenv(verbose: bool = False) -> LabkeyAPI:
     config = dotenv_values()
-    return LabkeyAPI(config["domain"], config["container_path"])
+    return LabkeyAPI(config["domain"], config["container_path"], verbose=verbose)
 
 
 def send_data(

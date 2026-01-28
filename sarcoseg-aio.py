@@ -78,7 +78,7 @@ def main(args: argparse.Namespace):
     if not patient_id_list:
         sys.exit(-1)
 
-    labkey_api = database.labkey_from_dotenv()
+    labkey_api = database.labkey_from_dotenv(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
@@ -140,27 +140,27 @@ def main(args: argparse.Namespace):
         main_logger.info(
             f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.patient_id}"
         )
-        all_metrics_results = segmentation.segment_ct_study(
+        metrics_results = segmentation.segment_ct_study(
             output_study_dir, output_study_dir, save_mask_overlays=True
         )
 
-        """
         if args.upload_labkey:
-            pass
             # TODO: send dicom data to labkey
             # TESTME:
             labkey_api._upload_data(
-                schema_name="lists", query_name="CTVysetreni", rows=dicom_study_tags
+                schema_name="lists",
+                query_name="CTVysetreni",
+                rows=[dicom_study_tags.to_dict()],
             )
 
             # TODO: send segmentation data to labkey
             # TESTME:
-           
-            # labkey_api._upload_data(
-            #     schema_name="lists", query_name="CTSegmentationData", rows=segment_data
-            # )
-           
-        """
+            metrics_data = [d._to_dict() for d in metrics_results]
+            labkey_api._upload_data(
+                schema_name="lists",
+                query_name="CTSegmentationData",
+                rows=metrics_data,
+            )
 
         if args.remove_dicom_files:
             utils.remove_dicom_dir(input_study_dir)
