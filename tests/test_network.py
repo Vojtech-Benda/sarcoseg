@@ -5,7 +5,7 @@ from src.network import pacs, database
 from dotenv import dotenv_values
 
 
-class Pacs(unittest.TestCase):
+class TestPacs(unittest.TestCase):
     api = pacs.pacs_from_dotenv()
     STUDY_INST_UID: str = None
 
