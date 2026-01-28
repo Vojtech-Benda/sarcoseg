@@ -46,6 +46,10 @@ def preprocess_dicom_study(
 
     dicom_files = find_dicoms(input_dir)
 
+    if not dicom_files:
+        logger.error(f"no DICOM files found in `{input_dir}`")
+        return None
+
     study_data, files_by_series_uid, dose_report_path = filter_dicom_files(dicom_files)
 
     dose_per_event = extract_dose_values(dose_report_path)
@@ -325,11 +329,21 @@ def extract_dose_values(dose_report: str) -> dict[str, float]:
     return event_to_dose
 
 
-def find_dicoms(dicom_dir: Path):
-    for root, _, files in dicom_dir.walk():
-        if len(files) == 0 or "DICOMDIR" in files:
-            continue
-        return list(root.iterdir())
+def find_dicoms(dicom_dir: Path) -> Union[list[Path], None]:
+    """
+    Returns DICOM files with matching expression `*CT*`.
+
+    Args:
+        dicom_dir (Path): Path to DICOM directory.
+
+    Returns:
+        paths (list[Path] | None): List of DICOM filepaths, otherwise `None`.
+    """
+
+    paths = [f for f in dicom_dir.rglob("*CT*") if f.is_file()]
+    if not paths:
+        return None
+    return paths
 
 
 def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyRow = None):
