@@ -23,7 +23,7 @@ class LabkeyRow:
     participant: str
     study_instance_uid: str
     pacs_number: str = None
-    patient_weight: float = None
+    patient_height: float = None
 
 
 class LabkeyAPI(APIWrapper):
