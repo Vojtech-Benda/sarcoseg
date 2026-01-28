@@ -10,17 +10,17 @@ import pandas as pd
 class SeriesData:
     series_inst_uid: str = None
     series_description: str = None
-    filepaths: list[Path] = None
-    num_of_filepaths: int = None
-    slice_thickness: float = None
-    convolution_kernel: str = None
-    has_contrast: str = None
-    contrast_phase: str = None
-    kilo_voltage_peak: float = None
-    mean_tube_current: float = None
-    irradiation_event_uid: str = None
-    mean_ctdi_vol: float = None
-    dose_length_product: float = None
+    filepaths: list[Path] = field(default=None, repr=False)
+    num_of_filepaths: int = field(default=None, repr=False)
+    slice_thickness: float = field(default=None, repr=False)
+    convolution_kernel: str = field(default=None, repr=False)
+    has_contrast: str = field(default=None, repr=False)
+    contrast_phase: str = field(default=None, repr=False)
+    kilo_voltage_peak: float = field(default=None, repr=False)
+    mean_tube_current: float = field(default=None, repr=False)
+    irradiation_event_uid: str = field(default=None, repr=False)
+    mean_ctdi_vol: float = field(default=None, repr=False)
+    dose_length_product: float = field(default=None, repr=False)
 
 
 @dataclass
@@ -29,6 +29,30 @@ class StudyData:
     study_inst_uid: str = None
     study_date: str = None
     series_dict: dict[str, SeriesData] = None
+
+    def _to_list(self) -> list[dict]:
+        data = []
+        study_data = {
+            "patient_id": self.patient_id,
+            "study_inst_uid": self.study_inst_uid,
+            "study_date": self.study_date,
+        }
+        for series in self.series_dict.values():
+            row = {
+                "series_inst_uid": series.series_inst_uid,
+                "series_description": series.series_description,
+                "slice_thickness": series.slice_thickness,
+                "has_constrast": series.has_contrast,
+                "contrast_phase": series.contrast_phase,
+                "kilo_voltage_peak": series.kilo_voltage_peak,
+                "mean_tube_current": series.mean_tube_current,
+                "mean_ctdi_vol": series.mean_ctdi_vol,
+                "dose_length_product": series.dose_length_product,
+            }
+            row.update(study_data)
+            data.append(row)
+
+        return data
 
 
 @dataclass

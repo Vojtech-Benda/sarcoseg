@@ -13,6 +13,7 @@ from datetime import datetime
 
 # from src.network import database
 from src.classes import SeriesData, StudyData
+from src.network.database import LabkeyRow
 from src import slogger
 
 
@@ -331,7 +332,7 @@ def find_dicoms(dicom_dir: Path):
         return list(root.iterdir())
 
 
-def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None):
+def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: LabkeyRow = None):
     rows: list[dict[str, Any]] = []
     for _, series in study.series_dict.items():
         row = {
@@ -349,8 +350,8 @@ def write_dicom_tags(study_dir: Path, study: StudyData, labkey_data: dict = None
             "dose_length_product": series.dose_length_product,
         }
         if labkey_data:
-            row["participant"] = labkey_data["PARTICIPANT"]
-            row["vyska_pac."] = labkey_data["VYSKA_PAC."]
+            row["participant"] = labkey_data.participant
+            row["vyska_pac."] = labkey_data.patient_height
 
         rows.append(row)
 
