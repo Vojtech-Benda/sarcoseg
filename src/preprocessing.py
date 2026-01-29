@@ -411,7 +411,7 @@ def write_dicom_tags(
         row = {
             "patient_id": study.patient_id,
             "study_inst_uid": study.uid,
-            "study_date": study,
+            "study_date": study.date,
             "series_inst_uid": series.uid,
             "series_description": series.description,
             "slice_thickness": series.slice_thickness,
