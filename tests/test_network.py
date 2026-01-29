@@ -7,7 +7,7 @@ from dotenv import dotenv_values
 
 class TestPacs(unittest.TestCase):
     api = pacs.pacs_from_dotenv()
-    STUDY_INST_UID: str = None
+    STUDY_INST_UID: str
 
     def test_echoscu(self):
         ret = self.api._echoscu(verbose=True)
