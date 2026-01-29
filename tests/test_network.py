@@ -40,11 +40,34 @@ class TestPacs(unittest.TestCase):
         )
 
 
-class Labkey(unittest.TestCase):
+class TestLabkey(unittest.TestCase):
     api = database.labkey_from_dotenv()
 
     def test_labkey_connection(self):
         self.assertTrue(self.api.is_labkey_reachable(verbose=True))
+
+    def test_labkey_query(self):
+        rows = [
+            {
+                "RODNE_CISLO": "0124",
+                "VYSKA_PAC.": 179.0,
+                "PARTICIPANT": "PT001",
+                "STUDY_INSTANCE_UID": "1.2.3",
+            }
+        ]
+        labkey_data = self.api.sanitize_response_data(rows)
+        true_labkey_data = [
+            database.LabkeyRow(
+                patient_id="0124",
+                participant="PT001",
+                study_instance_uid="1.2.3",
+                patient_height=179.0,
+            )
+        ]
+
+        for data, true_data in zip(labkey_data, true_labkey_data):
+            self.assertEqual(data, true_data)
+            print(f"{data=}\n{true_data=}")
 
 
 def validate_study_uid(study_uid: str):
