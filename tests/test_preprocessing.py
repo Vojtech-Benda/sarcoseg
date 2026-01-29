@@ -13,6 +13,14 @@ class TestPreprocessDicom(unittest.TestCase):
         self.assertTrue(files)
         self.assertIsNone(no_files)
 
+    def test_dose_report(self):
+        filepath = Path("tests/input/dicom/dose", "00000ADD")
+
+        dose_values = preprocessing.extract_dose_values(filepath)
+
+    def test_study_preprocess(self):
+        pass
+
 
 if __name__ == "__main__":
     unittest.main()
