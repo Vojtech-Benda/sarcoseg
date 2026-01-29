@@ -19,7 +19,20 @@ class TestPreprocessDicom(unittest.TestCase):
         dose_values = preprocessing.extract_dose_values(filepath)
 
     def test_study_preprocess(self):
-        pass
+        input_path = Path("inputs/1.3.6.1.4.1.36302.1.1.2.67386.4681372")
+        output_path = Path("tests/output/1.3.6.1.4.1.36302.1.1.2.67386.4681372")
+        study_data = preprocessing.preprocess_dicom_study(input_path, output_path)
+
+        print(study_data)
+        self.assertIsNotNone(study_data)
+
+        nifti_files = list(output_path.rglob("*.nii.gz"))
+        print(nifti_files)
+        self.assertIsNotNone(nifti_files)
+
+        csv_files = list(output_path.rglob("*.csv"))
+        print(csv_files)
+        self.assertIsNotNone(csv_files)
 
 
 if __name__ == "__main__":
