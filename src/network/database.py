@@ -19,11 +19,26 @@ API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_s
 @dataclass
 class LabkeyRow:
     patient_id: str
-    study_date: str
+    # study_date: str
     participant: str
     study_instance_uid: str
-    pacs_number: str = None
+    # pacs_number: str = None
     patient_height: float = None
+
+    @classmethod
+    def from_labkey_dict(cls, row: dict):
+        return cls(
+            patient_id=row.get("RODNE_CISLO"),
+            # TODO: add later if needed for PACS C-MOVE by id and date
+            # study_date=row.get("CAS_VYSETRENI").split(" ")[
+            #     0
+            # ],  # take date, discard time ["date", "time"]
+            participant=row.get("PARTICIPANT"),
+            study_instance_uid=row.get("STUDY_INSTANCE_UID"),
+            # TODO: add later if needed for PACS somehow
+            # pacs_number=row.get("PACS_CISLO"),
+            patient_height=row.get("VYSKA_PAC."),
+        )
 
 
 class LabkeyAPI(APIWrapper):
@@ -99,31 +114,33 @@ class LabkeyAPI(APIWrapper):
         rows = response.get("rows", [])
         logger.info(f"returned rows: {len(rows)}")
         if len(rows) == 0:
-            logger.warning("no matching rows")
+            logger.warning("no returned rows")
             return None
 
         if sanitize_rows:
             return self.sanitize_response_data(rows, columns)
         return rows
 
-    def sanitize_response_data(self, rows: list[dict], columns: list[str] | str):
-        if isinstance(columns, str):
-            columns = columns.split(",")
+    def sanitize_response_data(self, rows: list[dict]):
+        # if isinstance(columns, str):
+        #     columns = columns.split(",")
 
-        ret: list[LabkeyRow] = []
-        for row in rows:
-            patient_data = LabkeyRow(
-                patient_id=row.get("RODNE_CISLO"),
-                study_date=row.get("CAS_VYSETRENI").split(" ")[
-                    0
-                ],  # take date, discard time ["date", "time"]
-                participant=row.get("PARTICIPANT"),
-                study_instance_uid=row.get("STUDY_INSTANCE_UID"),
-                pacs_number=row.get("PACS_CISLO"),
-                patient_weight=row.get("VYSKA_PAC."),
-            )
+        # ret: list[LabkeyRow] = []
+        ret = [LabkeyRow.from_labkey_dict(row) for row in rows]
 
-            ret.append(patient_data)
+        # for row in rows:
+        #     patient_data = LabkeyRow(
+        #         patient_id=row.get("RODNE_CISLO"),
+        #         study_date=row.get("CAS_VYSETRENI").split(" ")[
+        #             0
+        #         ],  # take date, discard time ["date", "time"]
+        #         participant=row.get("PARTICIPANT"),
+        #         study_instance_uid=row.get("STUDY_INSTANCE_UID"),
+        #         pacs_number=row.get("PACS_CISLO"),
+        #         patient_height=row.get("VYSKA_PAC."),
+        #     )
+
+        #     ret.append(patient_data)
         # return [{col: row[col] for col in row if col in columns} for row in rows]
         return ret
 
