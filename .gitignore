@@ -12,9 +12,9 @@ download/
 .env
 src/fnosarcoseg.egg-info/
 build/
-tests/data
 models/
 tests/input
+tests/output
 tests/download
 labkey_filter.py
 
