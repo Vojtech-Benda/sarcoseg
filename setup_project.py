@@ -9,11 +9,12 @@ from totalsegmentator.python_api import download_pretrained_weights
 def setup_project(
     input_dir: str = "./inputs",
     output_dir: str = "./outputs",
+    download_dir: str = "./downloads",
     remove_model_zip: bool = False,
 ):
     model_dir = "./models"
     model_name = "muscle_fat_tissue_0_0_2"
-    for d in (input_dir, output_dir, model_dir):
+    for d in (input_dir, output_dir, model_dir, download_dir):
         if os.path.exists(d):
             print(f"directory `{d}` exists")
             continue
@@ -77,6 +78,13 @@ def get_args():
         default="./outputs",
     )
     parser.add_argument(
+        "-d",
+        "--download-dir",
+        help="path to PACS download directory",
+        type=str,
+        default="./downloads",
+    )
+    parser.add_argument(
         "--remove-model-zip",
         action="store_true",
         help="remove downloaded huggingface model ZIP file",
@@ -89,5 +97,8 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     setup_project(
-        args.input_dir, args.output_dir, remove_model_zip=args.remove_model_zip
+        args.input_dir,
+        args.output_dir,
+        args.download_dir,
+        remove_model_zip=args.remove_model_zip,
     )

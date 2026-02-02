@@ -1,14 +1,22 @@
+
 # input/output directories
 inputs/
 outputs/
+download/
 
 # environment items
+.vscode/
 .venv/
-.venv-test/
+
+# project files
+.env
 src/fnosarcoseg.egg-info/
 build/
-
 models/
+tests/input
+tests/output
+tests/download
+labkey_filter.py
 
 # ide dirs
 .vscode/*
@@ -16,3 +24,9 @@ models/
 
 # pycache
 __pycache__
+
+# other files
+*.nii
+*.nii.gz
+*.json
+*.ipynb

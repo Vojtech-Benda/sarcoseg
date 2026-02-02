@@ -2,14 +2,17 @@ import nibabel as nib
 import numpy as np
 import skimage as sk
 import pandas as pd
+import os
+import shutil
 
 from time import perf_counter
 from pathlib import Path
 from typing import Union, Any
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
-from src.classes import ImageData, MetricsData, Centroids
 
+from src.classes import ImageData, MetricsData, Centroids
+from src import slogger
 
 DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_L1": 31,
@@ -24,6 +27,8 @@ DEFAULT_VERTEBRA_CLASSES = {
 DEFAULT_TISSUE_CLASSES = {"sat": 1, "vat": 2, "imat": 3, "muscle": 4}
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
+
+logger = slogger.get_logger(__name__)
 
 
 def get_vertebrae_body_centroids(
@@ -110,7 +115,7 @@ def extract_slices(
         FileNotFoundError: If segmented spine mask is not found.
 
     Returns:
-        tuple[Nifti1Image, Path, dict[str, NDArray], float]: _description_
+
     """
     if not isinstance(spine_mask, Nifti1Image):
         if Path(spine_mask).exists():
@@ -143,7 +148,7 @@ def extract_slices(
 
     if slices_range[0] < 0:
         slices_range[0] = 0
-        print(
+        logger.info(
             f"lower index {slices_range[0]} is outside lower extent for Z dimension, setting to 0"
         )
 
@@ -151,11 +156,11 @@ def extract_slices(
     if slices_range[1] > z_size:
         slices_range[1] = z_size
         slices_range[0] -= 1
-        print(
+        logger.info(
             f"upper index {slices_range[1]} is outside upper extent for Z dimension {z_size}, setting to {z_size}"
         )
 
-    print(
+    logger.info(
         f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}"
     )
 
@@ -166,15 +171,15 @@ def extract_slices(
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
-        print(f"file `{output_filepath}` exists, overwriting")
+        logger.info(f"file `{output_filepath}` exists, overwriting")
 
     try:
         nib.save(sliced_volume, output_filepath)
     except RuntimeError as err:
-        print(err)
+        logger.error(err)
 
     duration = perf_counter() - start
-    print(f"slice extraction finished in {duration} seconds")
+    logger.info(f"slice extraction finished in {duration} seconds")
 
     return (
         ImageData(image=sliced_volume, path=output_filepath),
@@ -223,16 +228,19 @@ def postprocess_tissue_masks(
     # squeeze processed labels of shape H x W x D x L -> H x W x D
     out_nifti = np.zeros(processed_mask.shape[:-1], dtype=np.uint8)
 
-    for i in range(processed_mask.shape[-1]):
-        out_nifti[processed_mask[..., i] == 1] = i + 1
+    for i, label in enumerate(DEFAULT_TISSUE_CLASSES.values()):
+        out_nifti[processed_mask[..., i]] = label
     out_nifti = nib.as_closest_canonical(
         nib.Nifti1Image(out_nifti, mask_data.image.affine)
     )
-    nib.save(out_nifti, mask_data.path)  # overwrite segmented image
+    processed_mask_path = mask_data.path.parent.joinpath("tissue_mask_pp.nii.gz")
+    nib.save(out_nifti, processed_mask_path)  # overwrite segmented image
 
     duration = perf_counter() - start
-    print(f"tissue postprocessing finished in {duration:.2f} second")
-    return ImageData(image=processed_mask, spacing=mask_data.spacing), duration
+    logger.info(f"tissue postprocessing finished in {duration:.2f} second")
+    return ImageData(
+        image=out_nifti, spacing=mask_data.spacing, path=processed_mask_path
+    ), duration
 
 
 def compute_metrics(
@@ -249,29 +257,28 @@ def compute_metrics(
     if spacing is None:
         spacing = (1.0, 1.0, 1.0)
 
-    mask_arr = tissue_mask_data.image
-    if len(mask_arr.shape[:-1]) != len(spacing):
-        raise ValueError(
-            f"array shape {mask_arr.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
-        )
+    mask_arr = tissue_mask_data.image.get_fdata()
+    # if len(mask_arr.shape[:-1]) != len(spacing):
+    #     raise ValueError(
+    #         f"array shape {mask_arr.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
+    #     )
 
-    mask_shape = mask_arr.shape[:-1]  # get image size only
-    if mask_shape[-1] == 1:
+    depth = mask_arr.shape[-1]  # get image size only
+    if depth == 1:
         pixel_size = np.prod(spacing[:2]) / 100.0  # pixel size is in cm^2
-    elif mask_shape[-1] > 1:
+    elif depth > 1:
         pixel_size = np.prod(spacing) / 10000.0  # pixel size is in cm^3
 
     tissue_arr = tissue_volume_data.image.get_fdata()
 
     metrics_data = MetricsData()
     metrics_data.area = {
-        tissue: np.count_nonzero(mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)])
-        * pixel_size
-        for tissue in TISSUE_LABEL_INDEX
+        tissue: np.count_nonzero(mask_arr == label) * pixel_size
+        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
     metrics_data.mean_hu = {
-        tissue: np.mean(tissue_arr[mask_arr[..., TISSUE_LABEL_INDEX.index(tissue)]])
-        for tissue in TISSUE_LABEL_INDEX
+        tissue: np.mean(tissue_arr[mask_arr == label])
+        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
     patient_height = series_df_tags.get("vyska_pac.", None)
@@ -283,11 +290,45 @@ def compute_metrics(
     return metrics_data
 
 
+def read_patient_list(filepath: Union[str, Path]) -> Union[dict, None]:
+    if isinstance(filepath, str):
+        filepath = Path(filepath)
+
+    if not filepath.is_file():
+        logger.error(f"patient list at `{filepath}` is not a file")
+        return None
+    if not filepath.exists():
+        logger.error(f"patient list at `{filepath}` not found")
+        return None
+
+    suffix = filepath.suffix
+    if suffix == ".csv":
+        df = pd.read_csv(
+            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+        )
+    elif suffix in (".xlsx", ".xls"):
+        df = pd.read_excel(
+            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+        )
+
+    return df.participant.to_list()
+
+
 def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
     return df_tags.loc[df_tags["series_inst_uid"] == series_inst_uid].iloc[0].to_dict()
 
 
-def read_volume(path: Path):
+def read_volume(path: Union[Path, str]):
     volume = nib.as_closest_canonical(nib.load(path))
     spacing = volume.header.get_zooms()
     return ImageData(image=volume, spacing=spacing, path=path)
+
+
+def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
+    logger.info(f"removing empty segmentation directory `{dirpath}`")
+    shutil.rmtree(dirpath)
+
+
+def remove_dicom_dir(dirpath: Union[str, Path]):
+    logger.info(f"removing input DICOM directory `{dirpath}`")
+    shutil.rmtree(dirpath)

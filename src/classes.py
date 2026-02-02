@@ -4,37 +4,71 @@ from dataclasses import dataclass, field
 from numpy.typing import NDArray
 from typing import Any, Union
 import pandas as pd
+from pydicom import dcmread
+
+
+@dataclass
+class LabkeyRow:
+    # patient_id: str
+    # study_date: str
+    participant: str
+    study_instance_uid: str = None
+    # pacs_number: str = None
+    patient_height: float = None
+
+    @classmethod
+    def from_labkey_dict(cls, row: dict):
+        return cls(
+            # [TODO]: add later if needed for PACS C-MOVE by id and date, may cause issue with private information
+            # study_date=row.get("CAS_VYSETRENI").split(" ")[
+            #     0
+            # ],  # take date, discard time ["date", "time"] OR take both
+            participant=row.get("PARTICIPANT"),
+            study_instance_uid=row.get("STUDY_INSTANCE_UID"),
+            # [TODO]: maybe C-MOVE by PACS_CISLO (DICOM tag is AccessionNumber), but some records may be missing PACS_NUMBER
+            # pacs_number=row.get("PACS_CISLO"),
+            patient_height=row.get("VYSKA_PAC."),
+        )
 
 
 @dataclass
 class SeriesData:
-    series_inst_uid: str = None
-    series_description: str = None
-    filepaths: list[Path] = None
-    num_of_filepaths: int = None
-    slice_thickness: float = None
-    convolution_kernel: str = None
-    has_contrast: str = None
-    contrast_phase: str = None
-    kilo_voltage_peak: float = None
-    mean_tube_current: float = None
-    irradiation_event_uid: str = None
-    mean_ctdi_vol: float = None
-    dose_length_product: float = None
+    uid: str | None = None
+    description: str | None = None
+    filepaths: list[Path] | None = field(default=None, repr=False)
+    filepaths_num: int | None = field(default=None, repr=False)
+    slice_thickness: float | None = field(default=None, repr=False)
+    convolution_kernel: str | None = field(default=None, repr=False)
+    has_contrast: str | None = field(default=None, repr=False)
+    contrast_phase: str | None = field(default=None, repr=False)
+    kilo_voltage_peak: float | None = field(default=None, repr=False)
+    mean_tube_current: float | None = field(default=None, repr=False)
+    irradiation_event_uid: str | None = field(default=None, repr=False)
+    mean_ctdi_vol: float | None = field(default=None, repr=False)
+    dose_length_product: float | None = field(default=None, repr=False)
 
 
 @dataclass
 class StudyData:
-    patient_id: str = None
-    study_inst_uid: str = None
-    study_date: str = None
-    series_dict: dict[str, SeriesData] = None
+    # patient_id: str | None = None
+    participant: str = None
+    uid: str | None = None
+    date: str | None = None
+    series: list[SeriesData] = field(default_factory=list)
 
+    @classmethod
+    def from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
+        ds = dcmread(
+            dicom_file,
+            stop_before_pixels=True,
+            specific_tags=["StudyInstanceUID", "StudyDate"],
+        )
 
-@dataclass
-class LabkeyData:
-    data: dict[str, Any] = field(default_factory=dict)
-    query_columns: list[str] = field(default_factory=list)
+        return StudyData(
+            participant=labkey_data.participant,
+            uid=ds.StudyInstanceUID,
+            date=ds.StudyDate,
+        )
 
 
 @dataclass

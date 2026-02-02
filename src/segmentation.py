@@ -1,8 +1,6 @@
 from typing import Union
 from pathlib import Path
 from time import perf_counter
-from datetime import datetime
-import shutil
 import pandas as pd
 from totalsegmentator.python_api import totalsegmentator
 
@@ -14,115 +12,115 @@ from src import visualization
 from src import utils
 from src.utils import DEFAULT_VERTEBRA_CLASSES
 from src.classes import ImageData, MetricsData
+from src import slogger
+
+
+logger = slogger.get_logger(__name__)
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
 
-def segment_ct(
-    input_dir: str,
-    output_dir: str,
+def segment_ct_study(
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path],
     slices_num: int = 0,
     save_mask_overlays: bool = False,
     collect_metric_results: bool = False,
-):
-    case_dirs = list(Path(input_dir).glob("*/"))
-    print(f"found {len(case_dirs)} case directories")
+) -> list[MetricsData]:
+    if isinstance(output_dir, str):
+        Path(output_dir)
 
-    output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
-    output_dir.mkdir()
-    for case_dir in case_dirs:
-        ct_volume_files = list(case_dir.rglob("*.nii.gz"))
+    if isinstance(input_dir, str):
+        Path(input_dir)
 
-        usecols = [
-            "participant",
-            "patient_id",
-            "study_inst_uid",
-            "series_inst_uid",
-            "contrast_phase",
-            "vyska_pac.",
-        ]
-        df_tags = pd.read_csv(
-            Path(case_dir, "dicom_tags.csv"),
-            index_col=False,
-            header=0,
-            usecols=lambda col: col in usecols,
-            dtype={"patient_id": str, "vyska_pac.": float},
+    usecols = [
+        "participant",
+        "study_inst_uid",
+        "series_inst_uid",
+        "contrast_phase",
+        "vyska_pac.",
+    ]
+    df_tags = pd.read_csv(
+        Path(input_dir, f"dicom_tags_{input_dir.name}.csv"),
+        index_col=False,
+        header=0,
+        usecols=usecols,
+        dtype={
+            "participant": str,
+            "vyska_pac.": float,
+        },
+    )
+
+    series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
+    logger.info("-" * 25)
+    logger.info(
+        f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
+    )
+
+    metric_results_list: list[MetricsData] = []
+
+    for series_filepath in series_nifti_filepaths:
+        series_output_dir = series_filepath.parent
+        input_volume_data: ImageData = utils.read_volume(series_filepath)
+
+        series_inst_uid = series_output_dir.parts[-1]
+        logger.info(
+            f"running segmentation on CT series `{series_inst_uid}` of study `FILL IN STUDY_INST_UID!!`"
         )
 
-        print("-" * 25)
-        print(
-            f"\nfound {len(ct_volume_files)} volumes to segment spine for case `{case_dir.name}`"
+        spine_mask_data, spine_duration = segment_spine(
+            series_filepath, series_output_dir
         )
 
-        metric_results_list: list[MetricsData] = []
+        tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
+            input_volume_data.image,
+            spine_mask_data.image,
+            series_output_dir,
+            slices_num,
+        )
 
-        for ct_volume_path in ct_volume_files:
-            # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
-            case_output_dir = Path(output_dir, *ct_volume_path.parent.parts[-2:])
-            case_output_dir.mkdir(exist_ok=True, parents=True)
+        tissue_mask_data, tissue_duration = segment_tissues(
+            tissue_volume_data.path, series_output_dir
+        )
 
-            shutil.copy2(ct_volume_path, case_output_dir.joinpath(ct_volume_path.name))
+        processed_data, postproc_duration = utils.postprocess_tissue_masks(
+            tissue_mask_data,
+            tissue_volume_data,
+        )
 
-            input_volume_data: ImageData = utils.read_volume(ct_volume_path)
+        series_tags = utils.get_series_tags(df_tags, series_inst_uid)
+        metrics_results = utils.compute_metrics(
+            processed_data,
+            tissue_volume_data,
+            series_df_tags=series_tags,
+        )
 
-            series_inst_uid = case_output_dir.parts[-1]
-            print(f"running segmentation on `{series_inst_uid}`")
-            spine_mask_data, spine_duration = segment_spine(
-                ct_volume_path, case_output_dir
-            )
+        metrics_results.set_patient_data(df_tags, series_inst_uid)
+        metrics_results.set_duration(
+            spine_duration, tissue_duration, extraction_duration, postproc_duration
+        )
+        metrics_results.centroids = centroids
+        metric_results_list.append(metrics_results)
 
-            tissue_volume_data, centroids, extraction_duration = utils.extract_slices(
+        if save_mask_overlays:
+            case_images_dir = output_dir.joinpath("images")
+            case_images_dir.mkdir(exist_ok=True)
+            visualization.overlay_spine_mask(
                 input_volume_data.image,
                 spine_mask_data.image,
-                case_output_dir,
-                slices_num,
+                centroids.vertebre_centroid,
+                output_dir=case_images_dir,
             )
 
-            tissue_mask_data, tissue_duration = segment_tissues(
-                tissue_volume_data.path, case_output_dir
+            visualization.overlay_tissue_mask(
+                tissue_volume_data.image,
+                processed_data.image,
+                output_dir=case_images_dir,
             )
 
-            processed_data, postproc_duration = utils.postprocess_tissue_masks(
-                tissue_mask_data,
-                tissue_volume_data,
-            )
+    write_metric_results(metric_results_list, output_dir)
 
-            series_tags = utils.get_series_tags(df_tags, series_inst_uid)
-            metrics_results = utils.compute_metrics(
-                processed_data,
-                tissue_volume_data,
-                series_df_tags=series_tags,
-            )
-
-            metrics_results.set_patient_data(df_tags, series_inst_uid)
-            metrics_results.set_duration(
-                spine_duration, tissue_duration, extraction_duration, postproc_duration
-            )
-            metrics_results.centroids = centroids
-            metric_results_list.append(metrics_results)
-
-            if save_mask_overlays:
-                case_images_dir = case_output_dir.joinpath("images")
-                case_images_dir.mkdir(exist_ok=True)
-                visualization.overlay_spine_mask(
-                    input_volume_data.image,
-                    spine_mask_data.image,
-                    centroids.vertebre_centroid,
-                    output_dir=case_images_dir,
-                )
-
-                visualization.overlay_tissue_mask(
-                    tissue_volume_data.image,
-                    tissue_mask_data.image,
-                    output_dir=case_images_dir,
-                )
-
-        write_metric_results(
-            metric_results_list, Path(output_dir, case_output_dir.parts[-2])
-        )
-
-    if collect_metric_results:
-        collect_all_metric_results(output_dir)
+    return metric_results_list
 
 
 def segment_spine(
@@ -152,16 +150,16 @@ def segment_spine(
             Segmentation runtime, defaults to 0.0 if segmentation file exists.
     """
 
-    if not isinstance(output_dir, Path):
+    if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
 
-    print(f"\nsegmenting vertebrae for {input_nifti_path.name}")
+    logger.info(f"\nsegmenting vertebrae for {input_nifti_path.name}")
 
     if not vert_classes:
         vert_classes = list(DEFAULT_VERTEBRA_CLASSES.keys())
-        print(f"vert_classes is None, using default: {vert_classes}")
+        logger.warning(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
     spine_mask: nib.Nifti1Image = totalsegmentator(
@@ -176,7 +174,7 @@ def segment_spine(
     )
 
     duration = perf_counter() - start
-    print(f"spine segmentation finised in {duration:.2f} seconds")
+    logger.info(f"spine segmentation finised in {duration:.2f} seconds")
 
     spine_mask = nib.as_closest_canonical(spine_mask)
     spacing = spine_mask.header.get_zooms()
@@ -186,10 +184,10 @@ def segment_spine(
 def segment_tissues(
     tissue_volume_path: Union[Path, str], case_output_dir: Union[Path, str]
 ) -> tuple[ImageData, float]:
-    if not isinstance(case_output_dir, Path):
+    if isinstance(case_output_dir, str):
         case_output_dir = Path(case_output_dir)
 
-    print(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
+    logger.info(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
 
@@ -214,7 +212,7 @@ def segment_tissues(
     )
 
     duration = perf_counter() - start
-    print(f"tissue segmentation finished in {duration}")
+    logger.info(f"tissue segmentation finished in {duration}")
 
     tissue_mask: ImageData = utils.read_volume(output_filepath)
     return tissue_mask, duration
@@ -222,17 +220,19 @@ def segment_tissues(
 
 def write_metric_results(metric_results: list[MetricsData], output_study_dir: Path):
     df = pd.DataFrame([result._to_dict() for result in metric_results])
-    filepath = output_study_dir.joinpath("metric_results.csv")
+    filepath = output_study_dir.joinpath(f"metric_results_{output_study_dir.name}.csv")
     if filepath.exists():
-        print(f"overwriting existing metric_results.csv at `{filepath}`")
+        logger.info(f"overwriting existing metric_results.csv at `{filepath}`")
     df.to_csv(filepath, sep=",", na_rep=nan, columns=df.columns, index=None)
 
 
-def collect_all_metric_results(input_dir: Union[str, Path]):
-    if not isinstance(input_dir, Path):
+def collect_all_metric_results(
+    input_dir: Union[str, Path], write_to_csv: bool = False
+) -> pd.DataFrame:
+    if isinstance(input_dir, str):
         input_dir = Path(input_dir)
 
-    metrics_files = list(input_dir.rglob("metric_results.csv"))
+    metrics_files = list(input_dir.rglob("metric_results_*.csv"))
     df = pd.concat(
         (
             pd.read_csv(file, index_col=None, header=0, dtype={"patient_id": str})
@@ -242,8 +242,13 @@ def collect_all_metric_results(input_dir: Union[str, Path]):
         ignore_index=True,
     )
 
-    filepath = Path(input_dir, "all_metric_results.csv")
-    df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
-    print(
-        f"written all metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series) to `{filepath}`"
+    logger.info(
+        f"collected metric results of {len(df.study_inst_uid.unique())} studies ({len(df.series_inst_uid.unique())} series)"
     )
+
+    if write_to_csv:
+        filepath = Path(input_dir, "all_metric_results.csv")
+        df.to_csv(filepath, sep=",", na_rep=nan, index=None, columns=df.columns)
+        logger.info(f"written results to `{filepath}`")
+
+    return df
