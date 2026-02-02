@@ -41,10 +41,10 @@ class TestPacs(unittest.TestCase):
 
 
 class TestLabkey(unittest.TestCase):
-    api = database.labkey_from_dotenv()
+    api = database.labkey_from_dotenv(verbose=True)
 
     def test_labkey_connection(self):
-        self.assertTrue(self.api.is_labkey_reachable(verbose=True))
+        self.assertTrue(self.api.is_labkey_reachable())
 
     def test_labkey_query(self):
         rows = [
