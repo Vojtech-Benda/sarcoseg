@@ -4,7 +4,6 @@ import shutil
 
 from pathlib import Path
 from typing import Any, Union
-from dataclasses import dataclass, field
 
 import pandas as pd
 import pydicom
@@ -13,57 +12,18 @@ from statistics import mean
 from datetime import datetime
 
 from src.network.database import LabkeyRow
+from src.classes import StudyData, SeriesData
 from src import slogger
 
 
 logger = slogger.get_logger(__name__)
 
 
-@dataclass
-class SeriesData:
-    uid: str | None = None
-    description: str | None = None
-    filepaths: list[Path] | None = field(default=None, repr=False)
-    filepaths_num: int | None = field(default=None, repr=False)
-    slice_thickness: float | None = field(default=None, repr=False)
-    convolution_kernel: str | None = field(default=None, repr=False)
-    has_contrast: str | None = field(default=None, repr=False)
-    contrast_phase: str | None = field(default=None, repr=False)
-    kilo_voltage_peak: float | None = field(default=None, repr=False)
-    mean_tube_current: float | None = field(default=None, repr=False)
-    irradiation_event_uid: str | None = field(default=None, repr=False)
-    mean_ctdi_vol: float | None = field(default=None, repr=False)
-    dose_length_product: float | None = field(default=None, repr=False)
-
-
-@dataclass
-class StudyData:
-    # patient_id: str | None = None
-    participant: str = None
-    uid: str | None = None
-    date: str | None = None
-    series: list[SeriesData] = field(default_factory=list)
-
-    @classmethod
-    def from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
-        ds = pydicom.dcmread(
-            dicom_file,
-            stop_before_pixels=True,
-            specific_tags=["StudyInstanceUID", "StudyDate"],
-        )
-
-        return StudyData(
-            participant=labkey_data.participant,
-            uid=ds.StudyInstanceUID,
-            date=ds.StudyDate,
-        )
-
-
 class DicomStudyPreprocessor:
     def __init__(self):
         pass
 
-    def preprocess_study(self):
+    def _preprocess_study(self):
         pass
 
 
@@ -183,22 +143,6 @@ def filter_dicom_files(
     """
 
     series_files_map: dict[str, list[Path]] = {}
-
-    # REMOVE:
-    # ds = pydicom.dcmread(
-    #     dicom_files[0],
-    #     stop_before_pixels=True,
-    #     specific_tags=["StudyDate", "StudyInstanceUID"],  # "PatientID"
-    # )
-
-    # REMOVE: move this outside the function and instantiate a StudyData (or PatientData?)
-    # study_data = StudyData(uid=ds.StudyInstanceUID, date=ds.StudyDate)
-    # or instantiate a StudyRecord (or PatientRecord?) associated with LabkeyRow (or part of LabkeyRow instance)
-    # study_data = StudyData(
-    #     # patient_id=ds.PatientID,
-    #     uid=ds.StudyInstanceUID,
-    #     date=ds.StudyDate,
-    # )
 
     dose_report_file = None
     for file in dicom_files:

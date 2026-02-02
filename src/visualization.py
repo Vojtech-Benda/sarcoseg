@@ -1,12 +1,9 @@
 import numpy as np
 from skimage.color import label2rgb
-import nibabel as nib
 from nibabel.nifti1 import Nifti1Image
 from pathlib import Path
 from numpy.typing import NDArray
 import imageio
-
-from src.classes import ImageData
 
 
 SPINE_COLORS = np.array(
@@ -30,7 +27,7 @@ TISSUE_COLORS_2 = np.array(
     ]
 )
 
-LPI_ORNT = np.array([[0.0, -1.0], [1.0, -1.0], [2.0, -1.0]])  # from RAS to LPI
+RAS_TO_LPI = np.array([[0.0, -1.0], [1.0, -1.0], [2.0, -1.0]])  # from RAS to LPI
 
 
 def overlay_spine_mask(
@@ -39,17 +36,10 @@ def overlay_spine_mask(
     vert_body_centroid: NDArray,
     output_dir: Path,
 ):
-    # reorient the volume to be in LPI directions for 2D plane
-    # volumes = [
-    #     nib.as_closest_canonical(nib.load(path))
-    #     for path in (spine_vol_path, spine_mask_path)
-    # ]
-    # extract slice at vertebrae's body centroid and transpose to get the correct orientation on 2D plane
-    # slices for each view list: [volume array, mask array]
     coronal = [
         np.squeeze(
             vol.slicer[:, vert_body_centroid[1] : vert_body_centroid[1] + 1, :]
-            .as_reoriented(LPI_ORNT)
+            .as_reoriented(RAS_TO_LPI)
             .get_fdata(),
             axis=1,
         ).T
@@ -58,7 +48,7 @@ def overlay_spine_mask(
     sagittal = [
         np.squeeze(
             vol.slicer[vert_body_centroid[0] : vert_body_centroid[0] + 1, :, :]
-            .as_reoriented(LPI_ORNT)
+            .as_reoriented(RAS_TO_LPI)
             .get_fdata(),
             axis=0,
         ).T
@@ -96,8 +86,8 @@ def overlay_tissue_mask(
     output_dir: Path,
 ):
     # reorient slices into LPI direction for 2D plane
-    tissue_volume = tissue_volume.as_reoriented(LPI_ORNT)
-    tissue_mask = tissue_mask.as_reoriented(LPI_ORNT)
+    tissue_volume = tissue_volume.as_reoriented(RAS_TO_LPI)
+    tissue_mask = tissue_mask.as_reoriented(RAS_TO_LPI)
 
     # tranpose array for the correct axis directions on 2D plane - right hand on left image side, anterior facing upwards
     image_array, mask_array = [

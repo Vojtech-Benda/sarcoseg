@@ -91,12 +91,10 @@ def main(args: argparse.Namespace):
             "VYSKA_PAC.",
             "PARTICIPANT",
             "PACS_CISLO",
-        ],  # TODO: possibly add CAS_VYSETRENI
+        ],  # [TODO]: possibly add CAS_VYSETRENI
         filter_dict={"PARTICIPANT": participant_list},
         sanitize_rows=True,
     )
-
-    queried_labkey_response = [database.LabkeyRow()]
 
     if queried_labkey_response is None:
         main_logger.critical(
@@ -118,7 +116,7 @@ def main(args: argparse.Namespace):
 
             status = pacs_api._movescu(
                 labkey_data.study_instance_uid,
-                str(input_study_dir),
+                input_study_dir,
             )
 
             if status == -1:
@@ -127,7 +125,7 @@ def main(args: argparse.Namespace):
         output_study_dir = Path(output_dir, labkey_data.study_instance_uid)
 
         main_logger.info(
-            f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.patient_id}"
+            f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.participant}"
         )
         dicom_study_tags = preprocessing.preprocess_dicom_study(
             input_study_dir,
@@ -136,7 +134,7 @@ def main(args: argparse.Namespace):
         )
 
         main_logger.info(
-            f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.patient_id}"
+            f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.participant}"
         )
         metrics_results = segmentation.segment_ct_study(
             output_study_dir, output_study_dir, save_mask_overlays=True

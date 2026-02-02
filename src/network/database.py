@@ -1,43 +1,13 @@
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 import requests
-from pathlib import Path
-from typing import Union
-import pandas as pd
 
-# from src.classes import LabkeyData
 from dotenv import dotenv_values
-from dataclasses import dataclass
+
 from src import slogger
+from src.classes import LabkeyRow
 
 logger = slogger.get_logger(__name__)
-
-
-API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_ssl=True)
-
-
-@dataclass
-class LabkeyRow:
-    # patient_id: str
-    # study_date: str
-    participant: str
-    study_instance_uid: str = None
-    # pacs_number: str = None
-    patient_height: float = None
-
-    @classmethod
-    def from_labkey_dict(cls, row: dict):
-        return cls(
-            # TODO: add later if needed for PACS C-MOVE by id and date
-            # study_date=row.get("CAS_VYSETRENI").split(" ")[
-            #     0
-            # ],  # take date, discard time ["date", "time"] OR take both
-            participant=row.get("PARTICIPANT"),
-            study_instance_uid=row.get("STUDY_INSTANCE_UID"),
-            # TODO: add later if needed for PACS somehow
-            # pacs_number=row.get("PACS_CISLO"),
-            patient_height=row.get("VYSKA_PAC."),
-        )
 
 
 class LabkeyAPI(APIWrapper):
@@ -121,27 +91,7 @@ class LabkeyAPI(APIWrapper):
         return rows
 
     def sanitize_response_data(self, rows: list[dict]):
-        # if isinstance(columns, str):
-        #     columns = columns.split(",")
-
-        # ret: list[LabkeyRow] = []
-        ret = [LabkeyRow.from_labkey_dict(row) for row in rows]
-
-        # for row in rows:
-        #     patient_data = LabkeyRow(
-        #         patient_id=row.get("RODNE_CISLO"),
-        #         study_date=row.get("CAS_VYSETRENI").split(" ")[
-        #             0
-        #         ],  # take date, discard time ["date", "time"]
-        #         participant=row.get("PARTICIPANT"),
-        #         study_instance_uid=row.get("STUDY_INSTANCE_UID"),
-        #         pacs_number=row.get("PACS_CISLO"),
-        #         patient_height=row.get("VYSKA_PAC."),
-        #     )
-
-        #     ret.append(patient_data)
-        # return [{col: row[col] for col in row if col in columns} for row in rows]
-        return ret
+        return [LabkeyRow.from_labkey_dict(row) for row in rows]
 
     def _upload_data(
         self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
@@ -164,30 +114,3 @@ class LabkeyAPI(APIWrapper):
 def labkey_from_dotenv(verbose: bool = False) -> LabkeyAPI:
     config = dotenv_values()
     return LabkeyAPI(config["domain"], config["container_path"], verbose=verbose)
-
-
-def send_data(
-    schema: str, query_name: str, rows: Union[list, dict], update_rows: bool = False
-):
-    logger.info(f"sending {len(rows)} rows")
-    if update_rows:
-        response = API_HANDLER.query.update_rows(
-            schema_name=schema, query_name=query_name, rows=rows
-        )
-    else:
-        response = API_HANDLER.query.insert_rows(
-            schema_name=schema, query_name=query_name, rows=rows
-        )
-
-    if response["rowsAffected"] == 0:
-        logger.info(f"labkey {query_name}: no rows affected")
-
-
-def collect_data(data_path: str) -> Union[None, list]:
-    data_path: Path = Path(data_path)
-
-    if not data_path.exists():
-        raise FileNotFoundError(1, "data file at path not found", data_path)
-
-    data = pd.read_csv(data_path, header=0, index_col=None)
-    return [data.iloc[row_idx].to_dict() for row_idx in data.index]

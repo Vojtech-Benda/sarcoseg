@@ -1,8 +1,6 @@
 from typing import Union
 from pathlib import Path
 from time import perf_counter
-from datetime import datetime
-import shutil
 import pandas as pd
 from totalsegmentator.python_api import totalsegmentator
 
@@ -35,16 +33,8 @@ def segment_ct_study(
     if isinstance(input_dir, str):
         Path(input_dir)
 
-    # case_dirs = list(Path(input_dir).glob("*/"))
-    # print(f"found {len(case_dirs)} case directories")
-
-    # output_dir = Path(output_dir, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
-    # output_dir.mkdir()
-    # for case_dir in case_dirs:
-
     usecols = [
         "participant",
-        "patient_id",
         "study_inst_uid",
         "series_inst_uid",
         "contrast_phase",
@@ -54,38 +44,30 @@ def segment_ct_study(
         Path(input_dir, f"dicom_tags_{input_dir.name}.csv"),
         index_col=False,
         header=0,
-        usecols=lambda col: col in usecols,
-        dtype={"patient_id": str, "vyska_pac.": float},
+        usecols=usecols,
+        dtype={
+            "participant": str,
+            "vyska_pac.": float,
+        },
     )
 
-    series_nifti_filepaths = list(input_dir.rglob("input_volume.nii.gz"))
+    series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
     logger.info("-" * 25)
     logger.info(
-        f"\nfound {len(series_nifti_filepaths)} volumes to segment spine for study `{input_dir.name}`"
+        f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
     )
 
     metric_results_list: list[MetricsData] = []
 
     for series_filepath in series_nifti_filepaths:
-        # FIXME: POSSIBLY REMOVE LINES BELOW
-        # input_volume.nii.gz already present in output dir
-        # just construct the series directory as destination
-        # from path [input_dir, ..., study_inst_uid, series_inst_uid, file] take study_inst_uid and series_inst_uid
         series_output_dir = series_filepath.parent
-        # case_output_dir.mkdir(exist_ok=True, parents=True)
-
-        # FIXME: REMOVE LINE BELOW
-        # no need to copy, input_volume.nii.gz already present in output dir
-        # shutil.copy2(series_file, case_output_dir.joinpath(series_file.name))
-
         input_volume_data: ImageData = utils.read_volume(series_filepath)
 
-        # series_inst_uid = case_output_dir.parts[-1]
         series_inst_uid = series_output_dir.parts[-1]
         logger.info(
             f"running segmentation on CT series `{series_inst_uid}` of study `FILL IN STUDY_INST_UID!!`"
         )
-        # spine_mask_data, spine_duration = segment_spine(series_file, case_output_dir)
+
         spine_mask_data, spine_duration = segment_spine(
             series_filepath, series_output_dir
         )
@@ -136,13 +118,7 @@ def segment_ct_study(
                 output_dir=case_images_dir,
             )
 
-    # write_metric_results(
-    #     metric_results_list, Path(output_dir, case_output_dir.parts[-2])
-    # )
-    write_metric_results(metric_results_list, series_output_dir)
-
-    if collect_metric_results:
-        collect_all_metric_results(output_dir)
+    write_metric_results(metric_results_list, output_dir)
 
     return metric_results_list
 
