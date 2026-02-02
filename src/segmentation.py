@@ -135,19 +135,14 @@ def segment_spine(
     Args:
         input_nifti_path (Union[str, Path]): path to nifti file.
         output_dir (Union[str, Path], optional): directory to store segmentation mask.
-            Defaults to "./".
+            Defaults to `"./"`.
         vert_classes (list[str]): vertebrae class names in TotalSegmentator's task `total`.
             For class details see https://github.com/wasserth/TotalSegmentator?tab=readme-ov-file#class-details.
 
     Returns:
-        spine_mask (nib.Nifti1Image):
-            Spine segmentation mask.
-
-        spine_mask_path (Path):
-            Path to spine segmentation mask nifti file.
-
-        duration (float):
-            Segmentation runtime, defaults to 0.0 if segmentation file exists.
+        tuple (ImageData, float): Tuple of segmented spine mask and segmentation duration.
+        - **spine_mask** (ImageData): Spine segmentation mask.
+        - **duration** (float): Duration of segmentation.
     """
 
     if isinstance(output_dir, str):
@@ -159,7 +154,7 @@ def segment_spine(
 
     if not vert_classes:
         vert_classes = list(DEFAULT_VERTEBRA_CLASSES.keys())
-        logger.warning(f"vert_classes is None, using default: {vert_classes}")
+        logger.info(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
     spine_mask: nib.Nifti1Image = totalsegmentator(
