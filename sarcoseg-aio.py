@@ -24,13 +24,6 @@ def get_args():
         help="print more information to console",
         default=False,
     )
-    # parser.add_argument(
-    #     "-dd",
-    #     "--download-dir",
-    #     type=str,
-    #     help="path to PACS download directory",
-    #     default="./download",
-    # )
     parser.add_argument(
         "-id",
         "--input-dir",
