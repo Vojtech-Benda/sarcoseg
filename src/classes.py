@@ -70,6 +70,17 @@ class StudyData:
             date=ds.StudyDate,
         )
 
+    def _to_list_of_dicts(self):
+        return [
+            series.__dict__
+            | {
+                "participant": self.participant,
+                "study_inst_uid": self.uid,
+                "study_date": self.date,
+            }
+            for series in self.series
+        ]
+
 
 @dataclass
 class ImageData:

@@ -120,7 +120,7 @@ def main(args: argparse.Namespace):
         main_logger.info(
             f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.participant}"
         )
-        dicom_study_tags = preprocessing.preprocess_dicom_study(
+        study_data = preprocessing.preprocess_dicom_study(
             input_study_dir,
             output_study_dir,
             labkey_data,
@@ -139,7 +139,7 @@ def main(args: argparse.Namespace):
             labkey_api._upload_data(
                 schema_name="lists",
                 query_name="CTVysetreni",
-                rows=[dicom_study_tags.to_dict()],
+                rows=study_data._to_list_of_dicts(),
             )
 
             # [TODO]: send segmentation data to labkey
