@@ -74,8 +74,8 @@ def main(args: argparse.Namespace):
     verbose = args.verbose
     main_logger = slogger.get_logger(__name__)
 
-    patient_id_list = utils.read_patient_list(args.patient_list)
-    if not patient_id_list:
+    participant_list = utils.read_patient_list(args.participant_list)
+    if not participant_list:
         sys.exit(-1)
 
     labkey_api = database.labkey_from_dotenv(verbose=verbose)
@@ -83,20 +83,18 @@ def main(args: argparse.Namespace):
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    # queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
-    #     schema_name="lists",
-    #     query_name="RDG-CT-Sarko-All",
-    #     columns=[
-    #         "RODNE_CISLO",
-    #         "CAS_VYSETRENI",
-    #         "STUDY_INSTANCE_UID",
-    #         "VYSKA_PAC.",
-    #         "PARTICIPANT",
-    #         "PACS_CISLO",
-    #     ],
-    #     filter_dict={"RODNE_CISLO": patient_id_list},
-    #     sanitize_rows=True,
-    # )
+    queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
+        schema_name="lists",
+        query_name="RDG-CT-Sarko-All",
+        columns=[
+            "STUDY_INSTANCE_UID",
+            "VYSKA_PAC.",
+            "PARTICIPANT",
+            "PACS_CISLO",
+        ],  # TODO: possibly add CAS_VYSETRENI
+        filter_dict={"PARTICIPANT": participant_list},
+        sanitize_rows=True,
+    )
 
     queried_labkey_response = [database.LabkeyRow()]
 

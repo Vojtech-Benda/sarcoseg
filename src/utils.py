@@ -304,14 +304,14 @@ def read_patient_list(filepath: Union[str, Path]) -> Union[dict, None]:
     suffix = filepath.suffix
     if suffix == ".csv":
         df = pd.read_csv(
-            filepath, index_col=False, header=0, dtype=str, usecols=["patient_id"]
+            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
         )
-    elif suffix == ".xlsx" or suffix == ".xls":
+    elif suffix in (".xlsx", ".xls"):
         df = pd.read_excel(
-            filepath, index_col=False, header=0, dtype=str, usecols=["patient_id"]
+            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
         )
 
-    return df.patient_id.to_list()
+    return df.participant.to_list()
 
 
 def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):

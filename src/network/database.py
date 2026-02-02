@@ -18,21 +18,20 @@ API_HANDLER = APIWrapper(domain="4lerco.fno.cz", container_path="Testy/R", use_s
 
 @dataclass
 class LabkeyRow:
-    patient_id: str
+    # patient_id: str
     # study_date: str
     participant: str
-    study_instance_uid: str
+    study_instance_uid: str = None
     # pacs_number: str = None
     patient_height: float = None
 
     @classmethod
     def from_labkey_dict(cls, row: dict):
         return cls(
-            patient_id=row.get("RODNE_CISLO"),
             # TODO: add later if needed for PACS C-MOVE by id and date
             # study_date=row.get("CAS_VYSETRENI").split(" ")[
             #     0
-            # ],  # take date, discard time ["date", "time"]
+            # ],  # take date, discard time ["date", "time"] OR take both
             participant=row.get("PARTICIPANT"),
             study_instance_uid=row.get("STUDY_INSTANCE_UID"),
             # TODO: add later if needed for PACS somehow
