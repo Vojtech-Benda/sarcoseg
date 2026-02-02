@@ -29,15 +29,6 @@ class PacsAPI:
         self.store_port = store_port
 
     def _movescu(self, study_inst_uid: str, download_directory: str | Path):
-        if isinstance(download_directory, str):
-            download_directory = Path(download_directory)
-
-        # if download_directory.exists() and list(download_directory.rglob("*")) != 0:
-        #     logger.info(
-        #         f"skipping existing directory with DICOM files for StudyInstanceUID `{study_inst_uid}`"
-        #     )
-        #     return 0
-
         os.makedirs(download_directory, exist_ok=True)
 
         args = [
@@ -54,7 +45,7 @@ class PacsAPI:
             "--store-port",
             str(self.store_port),
             "-od",
-            download_directory,
+            str(download_directory),
             "-k",
             "QueryRetrieveLevel=STUDY",
             "-k",
