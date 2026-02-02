@@ -141,16 +141,16 @@ def main(args: argparse.Namespace):
         )
 
         if args.upload_labkey:
-            # TODO: send dicom data to labkey
-            # TESTME:
+            # [TODO]: send dicom data to labkey
+            # [TESTME]:
             labkey_api._upload_data(
                 schema_name="lists",
                 query_name="CTVysetreni",
                 rows=[dicom_study_tags.to_dict()],
             )
 
-            # TODO: send segmentation data to labkey
-            # TESTME:
+            # [TODO]: send segmentation data to labkey
+            # [TESTME]:
             metrics_data = [d._to_dict() for d in metrics_results]
             labkey_api._upload_data(
                 schema_name="lists",
