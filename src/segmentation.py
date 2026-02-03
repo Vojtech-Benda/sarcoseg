@@ -103,7 +103,7 @@ def segment_ct_study(
         metric_results_list.append(metrics_results)
 
         if save_mask_overlays:
-            case_images_dir = output_dir.joinpath("images")
+            case_images_dir = series_output_dir.joinpath("images")
             case_images_dir.mkdir(exist_ok=True)
             visualization.overlay_spine_mask(
                 input_volume_data.image,
@@ -221,6 +221,8 @@ def write_metric_results(metric_results: list[MetricsData], output_study_dir: Pa
     df.to_csv(filepath, sep=",", na_rep=nan, columns=df.columns, index=None)
 
 
+# [TODO]: check this and if it needs to be used
+# maybe use it as a ArgumentParser command
 def collect_all_metric_results(
     input_dir: Union[str, Path], write_to_csv: bool = False
 ) -> pd.DataFrame:
