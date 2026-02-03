@@ -126,6 +126,11 @@ def main(args: argparse.Namespace):
             labkey_data,
         )
 
+        if not study_data.series:
+            main_logger.warning(
+                f"participant {study_data.participant} study {study_data.uid} has no series to segment"
+            )
+
         main_logger.info(
             f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.participant}"
         )
