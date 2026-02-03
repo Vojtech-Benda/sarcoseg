@@ -2,7 +2,6 @@ import nibabel as nib
 import numpy as np
 import skimage as sk
 import pandas as pd
-import os
 import shutil
 
 from time import perf_counter
@@ -10,8 +9,9 @@ from pathlib import Path
 from typing import Union, Any
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
+from datetime import datetime
 
-from src.classes import ImageData, MetricsData, Centroids
+from src.classes import ImageData, LabkeyRow, MetricsData, Centroids
 from src import slogger
 
 DEFAULT_VERTEBRA_CLASSES = {
@@ -332,3 +332,52 @@ def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
 def remove_dicom_dir(dirpath: Union[str, Path]):
     logger.info(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
+
+
+def make_report(
+    requested_studies: list[LabkeyRow],
+    output_dir: Path,
+    date_time: str = None,
+    verbose: bool = False,
+):
+    if not date_time:
+        date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    study_dirs = list(output_dir.glob("*"))
+    missing_studies = [
+        f"{pat.participant}, {pat.study_instance_uid}"
+        for pat in requested_studies
+        if output_dir.joinpath(pat.study_instance_uid) not in study_dirs
+    ]
+
+    finished_studies = []
+    for pat in requested_studies:
+        study = output_dir.joinpath(pat.study_instance_uid)
+        preproc = len(list(study.rglob("input_ct_volume.nii.gz")))
+        segment = len(list(study.rglob("tissue_mask_pp.nii.gz")))
+
+        if preproc or segment:
+            finished = (
+                f"{pat.participant} {pat.study_instance_uid}, {preproc}, {segment}"
+            )
+            finished_studies.append(finished)
+
+    report = f"""Sarcoseg-aio segmentation report from {date_time}
+Image and metric data saved in: {output_dir}
+
+Total number of requested studies: {len(requested_studies)}
+Total number of missing studies: {len(missing_studies)}
+
+Requested participant, Study Instance UID, # of preprocessed series, # of segmented series:
+{"\n".join(finished_studies)}
+
+Patient studies not found in output:
+{"\n".join(missing_studies)}
+"""
+
+    report_path = output_dir.joinpath(f"report_{date_time}.txt")
+    with open(report_path, "w") as file:
+        file.write(report)
+
+    logger.info(f"Segmentation report written to `{report_path}`")
+    logger.info(f"\n{report}")
