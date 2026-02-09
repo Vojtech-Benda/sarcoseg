@@ -87,7 +87,7 @@ class LabkeyAPI(APIWrapper):
             return None
 
         if sanitize_rows:
-            return self.sanitize_response_data(rows, columns)
+            return self.sanitize_response_data(rows)
         return rows
 
     def sanitize_response_data(self, rows: list[dict]):
@@ -109,6 +109,36 @@ class LabkeyAPI(APIWrapper):
             )
 
         logger.info(response)
+
+    def exclude_finished_studies(self, input_participants: list[str]):
+        """Query Labkey `CTSegmentationData` table with input participants and exclude participants with finished segmentation.
+        If the queried table has no data, ie empty response, `input_participants` is returned instead.
+
+        Args:
+            input_participants (list[str]): List of participants to query.
+
+        Returns:
+            participants (list[str]): List of participants excluding participants existing in the queried table.
+        """
+
+        logger.info("checking for ")
+
+        rows = self._select_rows(
+            schema_name="lists",
+            query_name="CTSegmentationData",
+            columns=["study_inst_uid", "participant"],
+            filter_dict={"PARTICIPANT": input_participants},
+            sanitize_rows=True,
+        )
+
+        if not rows:
+            return input_participants
+
+        finished_studies = set([row["participant"] for row in rows])
+        logger.info(
+            f"excluding {len(finished_studies)} participants due to existing segmentation results"
+        )
+        return list(set(input_participants).symmetric_difference(finished_studies))
 
 
 def labkey_from_dotenv(verbose: bool = False) -> LabkeyAPI:

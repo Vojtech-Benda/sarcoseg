@@ -76,10 +76,15 @@ def main(args: argparse.Namespace):
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
+    # [TODO]: check for already finished/segmented studies
+    # check using Participant
+    participant_list = labkey_api.exclude_finished_studies(participant_list)
+
     queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
+            "RODNE_CISLO",
             "STUDY_INSTANCE_UID",
             "VYSKA_PAC.",
             "PARTICIPANT",
