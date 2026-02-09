@@ -34,6 +34,7 @@ def segment_ct_study(
         Path(input_dir)
 
     usecols = [
+        "patient_id",
         "participant",
         "study_inst_uid",
         "series_inst_uid",
