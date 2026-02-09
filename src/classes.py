@@ -50,7 +50,7 @@ class SeriesData:
 
 @dataclass
 class StudyData:
-    # patient_id: str | None = None
+    patient_id: str | None = None
     participant: str = None
     uid: str | None = None
     date: str | None = None
@@ -61,7 +61,7 @@ class StudyData:
         ds = dcmread(
             dicom_file,
             stop_before_pixels=True,
-            specific_tags=["StudyInstanceUID", "StudyDate"],
+            specific_tags=["StudyInstanceUID", "StudyDate"],  # [TODO]: add PatientID?
         )
 
         return StudyData(
@@ -72,12 +72,12 @@ class StudyData:
 
     def _to_list_of_dicts(self):
         return [
-            series.__dict__
-            | {
+            {
                 "participant": self.participant,
                 "study_inst_uid": self.uid,
                 "study_date": self.date,
             }
+            | series.__dict__
             for series in self.series
         ]
 
