@@ -55,9 +55,9 @@ def preprocess_dicom_study(
         logger.error(f"no DICOM files found in `{input_dir}`")
         return None
 
-    study_data = StudyData.from_dicom_file(labkey_data, dicom_files[0])
+    study_data = StudyData._from_dicom_file(labkey_data, dicom_files[0])
     logger.info(
-        f"preprocessing DICOM files for participant {study_data.participant}, study {study_data.uid}"
+        f"preprocessing DICOM files for participant {study_data.participant}, study {study_data.study_inst_uid}"
     )
 
     series_files_map, dose_report_path = filter_dicom_files(dicom_files)
@@ -74,7 +74,7 @@ def preprocess_dicom_study(
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    write_dicom_tags(output_dir, study_data, labkey_data)
+    study_data._write_to_json(output_dir)
 
     for series_data in study_data.series:
         write_series_as_nifti(output_dir, series_data)
@@ -85,9 +85,9 @@ def preprocess_dicom_study(
 
 
 def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
-    logger.info(f"writing series instance uid `{series_data.uid}`")
+    logger.info(f"writing series instance uid {series_data.series_inst_uid}")
 
-    output_series_dir = output_study_dir.joinpath(series_data.uid)
+    output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
     output_series_dir.mkdir(exist_ok=True, parents=True)
     output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
 
@@ -215,7 +215,7 @@ def select_series_to_segment(
         convolution_kernel = dataset.get("ConvolutionKernel", None)
 
         series_data = SeriesData(
-            uid=series_uid,
+            series_inst_uid=series_uid,
             description=series_desc,
             slice_thickness=float(dataset.get("SliceThickness", -1.0)),
             filepaths=filepaths,
@@ -352,20 +352,21 @@ def find_dicoms(dicom_dir: Path) -> Union[list[Path], None]:
         return paths
 
 
+# [REMOVE]: remove before merge
 def write_dicom_tags(
     study_dir: Path, study: StudyData, labkey_data: LabkeyRow | None = None
 ):
     logger.info(
-        f"saving DICOM tags for participant {study.participant}, study instance uid {study.uid}"
+        f"saving DICOM tags for participant {study.participant}, study instance uid {study.study_inst_uid}"
     )
     rows: list[dict[str, Any]] = []
     for series in study.series:
         row = {
             # "patient_id": study.patient_id,
             "participant": study.participant,
-            "study_inst_uid": study.uid,
-            "study_date": study.date,
-            "series_inst_uid": series.uid,
+            "study_inst_uid": study.study_inst_uid,
+            "study_date": study.study_date,
+            "series_inst_uid": series.series_inst_uid,
             "series_description": series.description,
             "slice_thickness": series.slice_thickness,
             "has_contrast": series.has_contrast,
@@ -382,7 +383,7 @@ def write_dicom_tags(
         rows.append(row)
 
     df = pd.DataFrame(rows, columns=rows[0].keys())
-    filepath = study_dir.joinpath(f"dicom_tags_{study.uid}.csv")
+    filepath = study_dir.joinpath(f"dicom_tags_{study.study_inst_uid}.csv")
 
     if filepath.exists():
         logger.info(f"overwriting existing dicom_tags.csv at `{str(filepath)}`")
@@ -395,7 +396,7 @@ def write_dicom_tags(
         columns=df.columns.to_list(),
     )
     logger.info(
-        f"DICOM tags for {study.participant}, study instance uid {study.uid} written to `{filepath}`"
+        f"DICOM tags for {study.participant}, study instance uid {study.study_inst_uid} written to `{filepath}`"
     )
 
 

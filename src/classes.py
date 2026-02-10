@@ -1,10 +1,15 @@
+import json
 from pathlib import Path
 from nibabel.nifti1 import Nifti1Image
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from numpy.typing import NDArray
 from typing import Any, Union
 import pandas as pd
 from pydicom import dcmread
+from src import slogger
+
+
+logger = slogger.get_logger(__name__)
 
 
 @dataclass
@@ -33,7 +38,7 @@ class LabkeyRow:
 
 @dataclass
 class SeriesData:
-    uid: str | None = None
+    series_inst_uid: str | None = None
     description: str | None = None
     filepaths: list[Path] | None = field(default=None, repr=False)
     filepaths_num: int | None = field(default=None, repr=False)
@@ -52,12 +57,13 @@ class SeriesData:
 class StudyData:
     patient_id: str | None = None
     participant: str = None
-    uid: str | None = None
-    date: str | None = None
+    study_inst_uid: str | None = None
+    study_date: str | None = None
+    # patient_height: str | None = None
     series: list[SeriesData] = field(default_factory=list)
 
     @classmethod
-    def from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
+    def _from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
         ds = dcmread(
             dicom_file,
             stop_before_pixels=True,
@@ -66,16 +72,45 @@ class StudyData:
 
         return StudyData(
             participant=labkey_data.participant,
-            uid=ds.StudyInstanceUID,
-            date=ds.StudyDate,
+            study_inst_uid=ds.StudyInstanceUID,
+            study_date=ds.StudyDate,
+            # patient_height=labkey_data.patient_height,
+        )
+
+    def _write_to_json(
+        self, output_dir: Union[str, Path] = None, exclude_fields: list[str] = None
+    ):
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+
+        exclude = {"filepaths", "filepaths_num"}
+        if exclude_fields:
+            exclude.update(exclude_fields)
+
+        data = asdict(
+            self,
+            dict_factory=lambda dic: {
+                key: val for key, val in dic if key not in exclude
+            },
+        )
+
+        filepath = output_dir.joinpath(f"dicom_tags_{self.study_inst_uid}.json")
+        if filepath.exists():
+            logger.info(f"overwriting existing file at `{str(filepath)}`")
+
+        with open(filepath, mode="w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2)
+
+        logger.info(
+            f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}\nfields excluded: {exclude}"
         )
 
     def _to_list_of_dicts(self):
         return [
             {
                 "participant": self.participant,
-                "study_inst_uid": self.uid,
-                "study_date": self.date,
+                "study_inst_uid": self.study_inst_uid,
+                "study_date": self.study_date,
             }
             | series.__dict__
             for series in self.series

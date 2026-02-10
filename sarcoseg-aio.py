@@ -133,7 +133,7 @@ def main(args: argparse.Namespace):
 
         if not study_data.series:
             main_logger.warning(
-                f"participant {study_data.participant} study {study_data.uid} has no series to segment"
+                f"participant {study_data.participant} study {study_data.study_inst_uid} has no series to segment"
             )
 
         main_logger.info(
