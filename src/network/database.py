@@ -1,7 +1,6 @@
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 import requests
-
 from dotenv import dotenv_values
 
 from src import slogger
@@ -39,8 +38,12 @@ class LabkeyAPI(APIWrapper):
         hostname = self.server_context.hostname
         try:
             response = requests.get(url=hostname, timeout=5)
-            if self.verbose:
+            if response.status_code == 200:
                 logger.info(f"{hostname} reachable: status {response.status_code}")
+            else:
+                logger.critical(f"{hostname} is unreachable")
+                return False
+
         except requests.exceptions.RequestException as e:
             logger.critical(f"{hostname} is unreachable")
             logger.critical(f"{e}")
