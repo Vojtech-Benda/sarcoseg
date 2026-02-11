@@ -66,17 +66,17 @@ def preprocess_dicom_study(
     if dose_report_path:
         event_dose_map = extract_dose_values(dose_report_path)
 
-    study_data.series = select_series_to_segment(
+    selected_series = select_series_to_segment(
         series_files_map, event_dose_map=event_dose_map
     )
 
-    logger.info(f"found {len(study_data.series)} valid series for segmentation")
+    logger.info(f"found {len(selected_series)} valid series for segmentation")
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
     study_data._write_to_json(output_dir)
 
-    for series_data in study_data.series:
+    for series_data in selected_series:
         write_series_as_nifti(output_dir, series_data)
 
     logger.info("-" * 25)

@@ -58,7 +58,7 @@ class LabkeyAPI(APIWrapper):
         max_rows: int = -1,
         filter_dict: dict[str, list[str]] = None,
         sanitize_rows: bool = False,
-    ) -> list[dict] | None:
+    ) -> list[LabkeyRow] | None:
         logger.info("labkey query:")
         logger.info(
             f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"

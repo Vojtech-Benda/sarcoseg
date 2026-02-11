@@ -17,9 +17,9 @@ class LabkeyRow:
     # patient_id: str
     # study_date: str
     participant: str
-    study_instance_uid: str = None
+    study_instance_uid: str | None = None
     # pacs_number: str = None
-    patient_height: float = None
+    patient_height: float | None = None
 
     @classmethod
     def from_labkey_dict(cls, row: dict):
@@ -56,11 +56,11 @@ class SeriesData:
 @dataclass
 class StudyData:
     patient_id: str | None = None
-    participant: str = None
+    participant: str | None = None
     study_inst_uid: str | None = None
     study_date: str | None = None
     # patient_height: str | None = None
-    series: list[SeriesData] = field(default_factory=list)
+    # series: list[SeriesData] = field(default_factory=list)
 
     @classmethod
     def _from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
@@ -78,7 +78,10 @@ class StudyData:
         )
 
     def _write_to_json(
-        self, output_dir: Union[str, Path] = None, exclude_fields: list[str] = None
+        self,
+        output_dir: Union[str, Path],
+        list_of_series: list[SeriesData],
+        exclude_fields: list[str] = None,
     ):
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
@@ -87,25 +90,31 @@ class StudyData:
         if exclude_fields:
             exclude.update(exclude_fields)
 
-        data = asdict(
-            self,
-            dict_factory=lambda dic: {
-                key: val for key, val in dic if key not in exclude
-            },
-        )
+        serialized = self.__dict__
+        serialized["series"] = [
+            {k: v for k, v in series.__dict__.items() if k not in exclude}
+            for series in list_of_series
+        ]
+
+        # data = asdict(
+        #     self,
+        #     dict_factory=lambda dic: {
+        #         key: val for key, val in dic if key not in exclude
+        #     },
+        # )
 
         filepath = output_dir.joinpath(f"dicom_tags_{self.study_inst_uid}.json")
         if filepath.exists():
             logger.info(f"overwriting existing file at `{str(filepath)}`")
 
         with open(filepath, mode="w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2)
+            json.dump(serialized, file, indent=2)
 
         logger.info(
             f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}\nfields excluded: {exclude}"
         )
 
-    def _to_list_of_dicts(self):
+    def _to_list_of_dicts(self, list_of_series: list[SeriesData] | None = None):
         return [
             {
                 "participant": self.participant,
@@ -113,7 +122,7 @@ class StudyData:
                 "study_date": self.study_date,
             }
             | series.__dict__
-            for series in self.series
+            for series in list_of_series
         ]
 
 
