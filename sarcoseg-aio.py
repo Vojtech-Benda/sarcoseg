@@ -131,6 +131,7 @@ def main(args: argparse.Namespace):
             main_logger.warning(
                 f"participant {study_data.participant} study {study_data.study_inst_uid} has no series to segment"
             )
+            continue
 
         main_logger.info(
             f"segmenting study {case_study.study_instance_uid} for patient {case_study.participant}"
