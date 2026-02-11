@@ -1,7 +1,7 @@
-from labkey.api_wrapper import APIWrapper
-from labkey.query import QueryFilter
 import requests
 from dotenv import dotenv_values
+from labkey.api_wrapper import APIWrapper
+from labkey.query import QueryFilter
 
 from src import slogger
 from src.classes import LabkeyRow

@@ -11,7 +11,7 @@ from nnunet.inference.predict import predict_cases
 from src import visualization
 from src import utils
 from src.utils import DEFAULT_VERTEBRA_CLASSES
-from src.classes import ImageData, MetricsData
+from src.classes import ImageData, MetricsData, SegmentationResult, StudyData
 from src import slogger
 
 
@@ -25,7 +25,7 @@ def segment_ct_study(
     output_dir: Union[str, Path],
     slices_num: int = 0,
     save_mask_overlays: bool = False,
-    collect_metric_results: bool = False,
+    study_case: StudyData = None,
 ) -> list[MetricsData]:
     if isinstance(output_dir, str):
         Path(output_dir)
@@ -33,24 +33,9 @@ def segment_ct_study(
     if isinstance(input_dir, str):
         Path(input_dir)
 
-    usecols = [
-        "patient_id",
-        "participant",
-        "study_inst_uid",
-        "series_inst_uid",
-        "contrast_phase",
-        "vyska_pac.",
-    ]
-    df_tags = pd.read_csv(
-        Path(input_dir, f"dicom_tags_{input_dir.name}.csv"),
-        index_col=False,
-        header=0,
-        usecols=usecols,
-        dtype={
-            "participant": str,
-            "vyska_pac.": float,
-        },
-    )
+    if not study_case:
+        path = input_dir.joinpath(f"dicom_tags_{input_dir.name}.json")
+        study_case = utils.read_study_case(path)
 
     series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
     logger.info("-" * 25)
@@ -58,15 +43,18 @@ def segment_ct_study(
         f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
     )
 
-    metric_results_list: list[MetricsData] = []
+    seg_result = SegmentationResult._from_study_case(study_case)
+
+    dict_of_metrics: dict[str, MetricsData] = {}
 
     for series_filepath in series_nifti_filepaths:
-        series_output_dir = series_filepath.parent
         input_volume_data: ImageData = utils.read_volume(series_filepath)
 
+        series_output_dir = series_filepath.parent
         series_inst_uid = series_output_dir.parts[-1]
+
         logger.info(
-            f"running segmentation on CT series `{series_inst_uid}` of study `FILL IN STUDY_INST_UID!!`"
+            f"running segmentation on CT series {series_inst_uid} of participant {seg_result.participant}"
         )
 
         spine_mask_data, spine_duration = segment_spine(
@@ -89,19 +77,20 @@ def segment_ct_study(
             tissue_volume_data,
         )
 
-        series_tags = utils.get_series_tags(df_tags, series_inst_uid)
-        metrics_results = utils.compute_metrics(
+        metrics = utils.compute_metrics(
             processed_data,
             tissue_volume_data,
-            series_df_tags=series_tags,
+            patient_height=study_case.patient_height,
         )
 
-        metrics_results.set_patient_data(df_tags, series_inst_uid)
-        metrics_results.set_duration(
+        metrics.set_duration(
             spine_duration, tissue_duration, extraction_duration, postproc_duration
         )
-        metrics_results.centroids = centroids
-        metric_results_list.append(metrics_results)
+        metrics.centroids = centroids
+        metrics.series_inst_uid = series_inst_uid
+        metrics.contrast_phase = study_case.series[series_inst_uid].contrast_phase
+
+        seg_result.metrics_dict[series_inst_uid] = metrics
 
         if save_mask_overlays:
             case_images_dir = series_output_dir.joinpath("images")
@@ -119,9 +108,8 @@ def segment_ct_study(
                 output_dir=case_images_dir,
             )
 
-    write_metric_results(metric_results_list, output_dir)
-
-    return metric_results_list
+    seg_result._write_to_json(output_dir)
+    return dict_of_metrics
 
 
 def segment_spine(

@@ -1,13 +1,10 @@
-import sys
 import argparse
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
 
-from src import preprocessing
-from src import segmentation
-from src import utils
-from src.network import pacs, database
-from src import slogger
+from src import preprocessing, segmentation, slogger, utils
+from src.network import database, pacs
 
 
 def get_args():
@@ -79,7 +76,7 @@ def main(args: argparse.Namespace):
     # [TODO]: check for already finished/segmented studies, using Participant
     participant_list = labkey_api.exclude_finished_studies(participant_list)
 
-    queried_cases: list[database.LabkeyRow] = labkey_api._select_rows(
+    queried_study_cases: list[database.LabkeyRow] = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
@@ -93,7 +90,7 @@ def main(args: argparse.Namespace):
         sanitize_rows=True,
     )
 
-    if not queried_cases:
+    if not queried_study_cases:
         main_logger.critical(
             "quitting sarcoseg, labkey query response has no StudyInstanceUIDs"
         )
@@ -103,8 +100,8 @@ def main(args: argparse.Namespace):
     output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 
-    for case in queried_cases:
-        input_study_dir = Path(args.input_dir, case.study_instance_uid)
+    for case_study in queried_study_cases:
+        input_study_dir = Path(args.input_dir, case_study.study_instance_uid)
 
         if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
             main_logger.info(
@@ -112,22 +109,22 @@ def main(args: argparse.Namespace):
             )
 
             status = pacs_api._movescu(
-                case.study_instance_uid,
+                case_study.study_instance_uid,
                 input_study_dir,
             )
 
             if status == -1:
                 continue
 
-        output_study_dir = Path(output_dir, case.study_instance_uid)
+        output_study_dir = Path(output_dir, case_study.study_instance_uid)
 
         main_logger.info(
-            f"preprocessing study {case.study_instance_uid} patient {case.participant}"
+            f"preprocessing study {case_study.study_instance_uid} patient {case_study.participant}"
         )
         study_data = preprocessing.preprocess_dicom_study(
             input_study_dir,
             output_study_dir,
-            case,
+            case_study,
         )
 
         if not study_data.series:
@@ -136,10 +133,13 @@ def main(args: argparse.Namespace):
             )
 
         main_logger.info(
-            f"segmenting study {case.study_instance_uid} for patient {case.participant}"
+            f"segmenting study {case_study.study_instance_uid} for patient {case_study.participant}"
         )
         metrics_results = segmentation.segment_ct_study(
-            output_study_dir, output_study_dir, save_mask_overlays=True
+            output_study_dir,
+            output_study_dir,
+            save_mask_overlays=True,
+            study_case=study_data,
         )
 
         if args.upload_labkey:

@@ -1,20 +1,18 @@
-import sys
 import re
 import shutil
-
+import sys
+from datetime import datetime
 from pathlib import Path
+from statistics import mean
 from typing import Any, Union
 
+import dcm2niix
 import pandas as pd
 import pydicom
-import dcm2niix
-from statistics import mean
-from datetime import datetime
 
-from src.network.database import LabkeyRow
-from src.classes import StudyData, SeriesData
 from src import slogger
-
+from src.classes import SeriesData, StudyData
+from src.network.database import LabkeyRow
 
 logger = slogger.get_logger(__name__)
 
@@ -41,7 +39,7 @@ CONTRAST_PHASES_PATTERN = re.compile(
 def preprocess_dicom_study(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = Path("./inputs"),
-    labkey_data: LabkeyRow | None = None,
+    labkey_case: LabkeyRow | None = None,
 ) -> Union[StudyData, None]:
     if isinstance(input_dir, str):
         input_dir = Path(input_dir)
@@ -55,7 +53,11 @@ def preprocess_dicom_study(
         logger.error(f"no DICOM files found in `{input_dir}`")
         return None
 
-    study_data = StudyData._from_dicom_file(labkey_data, dicom_files[0])
+    study_data = StudyData._from_dicom_file(labkey_case, dicom_files[0])
+
+    if labkey_case:
+        study_data.patient_height = labkey_case.patient_height
+
     logger.info(
         f"preprocessing DICOM files for participant {study_data.participant}, study {study_data.study_inst_uid}"
     )
@@ -66,17 +68,17 @@ def preprocess_dicom_study(
     if dose_report_path:
         event_dose_map = extract_dose_values(dose_report_path)
 
-    selected_series = select_series_to_segment(
+    study_data.series = select_series_to_segment(
         series_files_map, event_dose_map=event_dose_map
     )
 
-    logger.info(f"found {len(selected_series)} valid series for segmentation")
+    logger.info(f"found {len(study_data.series)} valid series for segmentation")
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
     study_data._write_to_json(output_dir)
 
-    for series_data in selected_series:
+    for series_data in study_data.series.values():
         write_series_as_nifti(output_dir, series_data)
 
     logger.info("-" * 25)
@@ -269,7 +271,7 @@ def select_series_to_segment(
                 series_data.irradiation_event_uid
             ).get("dlp", -1.0)
 
-    return list(selected_series.values())
+    return {series.series_inst_uid: series for series in selected_series.values()}
 
 
 def extract_dose_values(dose_filepath: Union[str, Path]) -> dict[str, dict[str, float]]:

@@ -1,13 +1,14 @@
 import json
-from pathlib import Path
-from nibabel.nifti1 import Nifti1Image
 from dataclasses import asdict, dataclass, field
-from numpy.typing import NDArray
+from pathlib import Path
 from typing import Any, Union
-import pandas as pd
-from pydicom import dcmread
-from src import slogger
 
+import pandas as pd
+from nibabel.nifti1 import Nifti1Image
+from numpy.typing import NDArray
+from pydicom import dcmread
+
+from src import slogger
 
 logger = slogger.get_logger(__name__)
 
@@ -59,8 +60,8 @@ class StudyData:
     participant: str | None = None
     study_inst_uid: str | None = None
     study_date: str | None = None
-    # patient_height: str | None = None
-    # series: list[SeriesData] = field(default_factory=list)
+    patient_height: str | None = None
+    series: dict[str, SeriesData] = field(default_factory=list)
 
     @classmethod
     def _from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
@@ -74,13 +75,14 @@ class StudyData:
             participant=labkey_data.participant,
             study_inst_uid=ds.StudyInstanceUID,
             study_date=ds.StudyDate,
-            # patient_height=labkey_data.patient_height,
         )
+
+    def get_series(self, series_uid: str) -> Union[SeriesData, None]:
+        return self.series.get(series_uid)
 
     def _write_to_json(
         self,
         output_dir: Union[str, Path],
-        list_of_series: list[SeriesData],
         exclude_fields: list[str] = None,
     ):
         if isinstance(output_dir, str):
@@ -90,18 +92,12 @@ class StudyData:
         if exclude_fields:
             exclude.update(exclude_fields)
 
-        serialized = self.__dict__
-        serialized["series"] = [
-            {k: v for k, v in series.__dict__.items() if k not in exclude}
-            for series in list_of_series
-        ]
-
-        # data = asdict(
-        #     self,
-        #     dict_factory=lambda dic: {
-        #         key: val for key, val in dic if key not in exclude
-        #     },
-        # )
+        serialized = asdict(
+            self,
+            dict_factory=lambda dic: {
+                key: val for key, val in dic if key not in exclude
+            },
+        )
 
         filepath = output_dir.joinpath(f"dicom_tags_{self.study_inst_uid}.json")
         if filepath.exists():
@@ -135,27 +131,21 @@ class ImageData:
 
 @dataclass
 class Centroids:
-    vertebre_centroid: NDArray = None
-    body_centroid: NDArray = None
+    vertebre_centroid: list = None
+    body_centroid: list = None
 
 
 @dataclass
 class MetricsData:
-    patient_data: dict[str, Any] = field(default_factory=dict)
+    series_inst_uid: str | None = None
+    contrast_phase: str | None = None
 
-    area: dict[str, Any] = field(default_factory=dict)
-    mean_hu: dict[str, Any] = field(default_factory=dict)
+    area: dict[str, Any] = None
+    mean_hu: dict[str, Any] = None
     skelet_muscle_index: float = None
 
     duration: float = None
     centroids: Centroids = None
-
-    def set_patient_data(self, df_patient_data: pd.DataFrame, series_inst_uid: str):
-        self.patient_data = (
-            df_patient_data.loc[df_patient_data["series_inst_uid"] == series_inst_uid]
-            .iloc[0]
-            .to_dict()
-        )
 
     def _to_dict(self):
         row = {}
@@ -170,3 +160,50 @@ class MetricsData:
 
     def set_duration(self, *durations):
         self.duration = sum(durations)
+
+
+@dataclass
+class SegmentationResult:
+    participant: str
+    study_inst_uid: str
+    patient_height: str | None = None
+
+    metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
+
+    @classmethod
+    def _from_study_case(cls, study_data: StudyData):
+        return SegmentationResult(
+            participant=study_data.participant,
+            study_inst_uid=study_data.study_inst_uid,
+            patient_height=study_data.patient_height,
+        )
+
+    def _write_to_json(
+        self,
+        output_dir: Union[str, Path],
+        exclude_fields: list[str] = None,
+    ):
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+
+        # [TODO]: if needed add fields to exclude and its default
+        # exclude = {}
+        # if exclude_fields:
+        #     exclude.update(exclude_fields)
+
+        serialized = asdict(
+            self,
+            dict_factory=lambda dic: {key: val for key, val in dic},
+        )
+        # if key not in exclude
+
+        filepath = output_dir.joinpath(f"metrics_{self.study_inst_uid}.json")
+        if filepath.exists():
+            logger.info(f"overwriting existing file at `{str(filepath)}`")
+
+        with open(filepath, mode="w", encoding="utf-8") as file:
+            json.dump(serialized, file, indent=2)
+
+        logger.info(
+            f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}"
+        )

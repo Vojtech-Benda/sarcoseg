@@ -21,15 +21,15 @@ class TestPreprocessDicom(unittest.TestCase):
         dose_values = preprocessing.extract_dose_values(filepath)
 
     def test_study_preprocess(self):
-        true_uid = "1.3.6.1.4.1.36302.1.1.2.67388.4692994"
+        true_uid = "1.3.6.1.4.1.36302.1.1.2.67386.4681372"
         true_participant = "PAT01"
 
         input_path = Path("inputs/", true_uid)
         output_path = Path("tests/output/", true_uid)
-        row = LabkeyRow(true_participant)
+        row = LabkeyRow(true_participant, patient_height=170.0)
 
         true_study_data = preprocessing.preprocess_dicom_study(
-            input_path, output_path, labkey_data=row
+            input_path, output_path, labkey_case=row
         )
 
         self.assertEqual(true_study_data.participant, true_participant)
@@ -43,9 +43,10 @@ class TestPreprocessDicom(unittest.TestCase):
 
         with open(json_file[0], mode="r") as file:
             data = json.load(file)
-            series_list = data.pop("series")
+            series_dict = data.pop("series")
             test_study_data = StudyData(
-                **data, series=[SeriesData(**series) for series in series_list]
+                **data,
+                series={key: SeriesData(**val) for key, val in series_dict.items()},
             )
 
         print(
