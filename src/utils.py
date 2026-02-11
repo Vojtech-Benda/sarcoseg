@@ -370,23 +370,23 @@ def remove_dicom_dir(dirpath: Union[str, Path]):
 
 
 def make_report(
-    requested_studies: list[LabkeyRow],
+    requested_study_cases: list[LabkeyRow],
     output_dir: Path,
-    date_time: str = None,
+    timestamp: str = None,
     verbose: bool = False,
 ):
-    if not date_time:
-        date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if not timestamp:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     study_dirs = list(output_dir.glob("*"))
     missing_studies = [
         f"{pat.participant}, {pat.study_instance_uid}"
-        for pat in requested_studies
+        for pat in requested_study_cases
         if output_dir.joinpath(pat.study_instance_uid) not in study_dirs
     ]
 
     finished_studies = []
-    for pat in requested_studies:
+    for pat in requested_study_cases:
         study = output_dir.joinpath(pat.study_instance_uid)
         preproc = len(list(study.rglob("input_ct_volume.nii.gz")))
         segment = len(list(study.rglob("tissue_mask_pp.nii.gz")))
@@ -397,10 +397,10 @@ def make_report(
             )
             finished_studies.append(finished)
 
-    report = f"""Sarcoseg-aio segmentation report from {date_time}
+    report = f"""Sarcoseg-aio segmentation report from {timestamp}
 Image and metric data saved in: {output_dir}
 
-Total number of requested studies: {len(requested_studies)}
+Total number of requested studies: {len(requested_study_cases)}
 Total number of missing studies: {len(missing_studies)}
 
 Requested participant, Study Instance UID, # of preprocessed series, # of segmented series:
@@ -410,7 +410,7 @@ Patient studies not found in output:
 {"\n".join(missing_studies)}
 """
 
-    report_path = output_dir.joinpath(f"report_{date_time}.txt")
+    report_path = output_dir.joinpath(f"report_{timestamp}.txt")
     with open(report_path, "w") as file:
         file.write(report)
 

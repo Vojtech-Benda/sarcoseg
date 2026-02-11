@@ -167,6 +167,8 @@ def main(args: argparse.Namespace):
     if not any(output_dir.iterdir()):
         utils.remove_empty_segmentation_dir(output_dir)
 
+    utils.make_report(queried_study_cases, output_dir, timestamp)
+
 
 if __name__ == "__main__":
     args = get_args()
