@@ -17,9 +17,9 @@ from src.classes import (
     Centroids,
     ImageData,
     LabkeyRow,
+    MetricsData,
     SeriesData,
     StudyData,
-    MetricsData,
 )
 
 DEFAULT_VERTEBRA_CLASSES = {
@@ -308,28 +308,27 @@ def compute_metrics(
     return MetricsData(area=area, mean_hu=mean_hu, skelet_muscle_index=smi)
 
 
-def read_patient_list(filepath: Union[str, Path]) -> Union[list, None]:
+def read_patient_list(
+    filepath: Union[str, Path], columns: list[str] | None = None
+) -> Union[pd.DataFrame, None]:
     if isinstance(filepath, str):
         filepath = Path(filepath)
 
-    if not filepath.is_file():
-        logger.error(f"patient list at `{filepath}` is not a file")
-        return None
-    if not filepath.exists():
-        logger.error(f"patient list at `{filepath}` not found")
+    if not filepath.is_file() or not filepath.exists():
+        logger.error(f"patient list at `{filepath}` is not a file or doesn't exist")
         return None
 
     suffix = filepath.suffix
     if suffix == ".csv":
         df = pd.read_csv(
-            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+            filepath, index_col=False, header=0, dtype=str, usecols=columns
         )
     elif suffix in (".xlsx", ".xls"):
         df = pd.read_excel(
-            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+            filepath, index_col=False, header=0, dtype=str, usecols=columns
         )
 
-    return df.participant.to_list()
+    return df
 
 
 def read_study_case(filepath: Union[str, Path]) -> StudyData:

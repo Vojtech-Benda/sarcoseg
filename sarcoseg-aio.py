@@ -68,6 +68,8 @@ def main(args: argparse.Namespace):
     if not participant_list:
         sys.exit(-1)
 
+    participant_list = participant_list.participant.to_list()
+
     labkey_api = database.labkey_from_dotenv(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
@@ -80,6 +82,7 @@ def main(args: argparse.Namespace):
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
+            "ID",
             "RODNE_CISLO",
             "STUDY_INSTANCE_UID",
             "VYSKA_PAC.",
