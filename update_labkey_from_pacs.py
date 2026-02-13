@@ -1,13 +1,16 @@
 import os
 from pathlib import Path
 
-from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 import pandas as pd
 from pydicom import dcmread
 from pynetdicom.apps.findscu import findscu
 
 from src.network import database, pacs
+
+"""
+This script is intended to update columns in StudyInstanceUID and PACS_CISLO on Labkey for all CT studies. 
+"""
 
 columns = [
     "ID",
@@ -17,7 +20,6 @@ columns = [
     "PACS_CISLO",
     "StudyInstanceUID",
 ]
-
 
 labkey_api = database.labkey_from_dotenv()
 response = labkey_api.query.select_rows(
