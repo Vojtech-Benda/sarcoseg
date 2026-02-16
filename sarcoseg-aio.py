@@ -1,13 +1,10 @@
-import sys
 import argparse
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
 
-from src import preprocessing
-from src import segmentation
-from src import utils
-from src.network import pacs, database
-from src import slogger
+from src import preprocessing, segmentation, slogger, utils
+from src.network import database, pacs
 
 
 def get_args():
@@ -71,15 +68,22 @@ def main(args: argparse.Namespace):
     if not participant_list:
         sys.exit(-1)
 
+    participant_list = participant_list.participant.to_list()
+
     labkey_api = database.labkey_from_dotenv(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    queried_labkey_response: list[database.LabkeyRow] = labkey_api._select_rows(
+    # [TODO]: check for already finished/segmented studies, using Participant
+    participant_list = labkey_api.exclude_finished_studies(participant_list)
+
+    queried_study_cases: list[database.LabkeyRow] = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
+            "ID",
+            "RODNE_CISLO",
             "STUDY_INSTANCE_UID",
             "VYSKA_PAC.",
             "PARTICIPANT",
@@ -89,7 +93,7 @@ def main(args: argparse.Namespace):
         sanitize_rows=True,
     )
 
-    if queried_labkey_response is None:
+    if not queried_study_cases:
         main_logger.critical(
             "quitting sarcoseg, labkey query response has no StudyInstanceUIDs"
         )
@@ -99,8 +103,8 @@ def main(args: argparse.Namespace):
     output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 
-    for labkey_data in queried_labkey_response:
-        input_study_dir = Path(args.input_dir, labkey_data.study_instance_uid)
+    for case_study in queried_study_cases:
+        input_study_dir = Path(args.input_dir, case_study.study_instance_uid)
 
         if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
             main_logger.info(
@@ -108,29 +112,38 @@ def main(args: argparse.Namespace):
             )
 
             status = pacs_api._movescu(
-                labkey_data.study_instance_uid,
+                case_study.study_instance_uid,
                 input_study_dir,
             )
 
             if status == -1:
                 continue
 
-        output_study_dir = Path(output_dir, labkey_data.study_instance_uid)
+        output_study_dir = Path(output_dir, case_study.study_instance_uid)
 
         main_logger.info(
-            f"preprocessing study {labkey_data.study_instance_uid} patient {labkey_data.participant}"
+            f"preprocessing study {case_study.study_instance_uid} patient {case_study.participant}"
         )
-        dicom_study_tags = preprocessing.preprocess_dicom_study(
+        study_data = preprocessing.preprocess_dicom_study(
             input_study_dir,
             output_study_dir,
-            labkey_data,
+            case_study,
         )
 
+        if not study_data.series:
+            main_logger.warning(
+                f"participant {study_data.participant} study {study_data.study_inst_uid} has no series to segment"
+            )
+            continue
+
         main_logger.info(
-            f"segmenting study {labkey_data.study_instance_uid} for patient {labkey_data.participant}"
+            f"segmenting study {case_study.study_instance_uid} for patient {case_study.participant}"
         )
         metrics_results = segmentation.segment_ct_study(
-            output_study_dir, output_study_dir, save_mask_overlays=True
+            output_study_dir,
+            output_study_dir,
+            save_mask_overlays=True,
+            study_case=study_data,
         )
 
         if args.upload_labkey:
@@ -139,7 +152,7 @@ def main(args: argparse.Namespace):
             labkey_api._upload_data(
                 schema_name="lists",
                 query_name="CTVysetreni",
-                rows=[dicom_study_tags.to_dict()],
+                rows=study_data._to_list_of_dicts(),
             )
 
             # [TODO]: send segmentation data to labkey
@@ -156,6 +169,8 @@ def main(args: argparse.Namespace):
 
     if not any(output_dir.iterdir()):
         utils.remove_empty_segmentation_dir(output_dir)
+
+    utils.make_report(queried_study_cases, output_dir, timestamp)
 
 
 if __name__ == "__main__":

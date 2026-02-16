@@ -1,9 +1,9 @@
+import json
 import unittest
 from pathlib import Path
 
 from src import preprocessing
-from src.classes import LabkeyRow
-import pandas as pd
+from src.classes import LabkeyRow, StudyData, SeriesData
 
 
 class TestPreprocessDicom(unittest.TestCase):
@@ -21,33 +21,39 @@ class TestPreprocessDicom(unittest.TestCase):
         dose_values = preprocessing.extract_dose_values(filepath)
 
     def test_study_preprocess(self):
-        true_uid = "1.3.6.1.4.1.36302.1.1.2.67388.4692994"
+        true_uid = "1.3.6.1.4.1.36302.1.1.2.67386.4681372"
         true_participant = "PAT01"
 
         input_path = Path("inputs/", true_uid)
         output_path = Path("tests/output/", true_uid)
-        row = LabkeyRow(true_participant)
+        row = LabkeyRow(true_participant, patient_height=170.0)
 
-        study_data = preprocessing.preprocess_dicom_study(
-            input_path, output_path, labkey_data=row
+        true_study_data = preprocessing.preprocess_dicom_study(
+            input_path, output_path, labkey_case=row
         )
 
-        self.assertEqual(study_data.participant, true_participant)
-        self.assertEqual(study_data.uid, true_uid)
+        self.assertEqual(true_study_data.participant, true_participant)
+        self.assertEqual(true_study_data.study_inst_uid, true_uid)
 
-        nifti_files = list(output_path.rglob("*.nii.gz"))
+        nifti_files = list(output_path.rglob("input_ct_volume.nii.gz"))
         self.assertIsNotNone(nifti_files)
 
-        csv_files = list(output_path.rglob("*.csv"))
-        self.assertIsNotNone(csv_files)
+        json_file = list(output_path.rglob("*.json"))
+        self.assertIsNotNone(json_file)
 
-        df = pd.read_csv(csv_files[0])
-        test_participant, test_uid = df.participant[0], df.study_inst_uid[0]
+        with open(json_file[0], mode="r") as file:
+            data = json.load(file)
+            series_dict = data.pop("series")
+            test_study_data = StudyData(
+                **data,
+                series={key: SeriesData(**val) for key, val in series_dict.items()},
+            )
+
         print(
-            f"participant: {df.participant[0]}, study inst uid: {df.study_inst_uid[0]}"
+            f"participant {test_study_data.participant}, study inst uid {test_study_data.study_inst_uid}"
         )
-        self.assertEqual(test_participant, true_participant)
-        self.assertEqual(test_uid, true_uid)
+        self.assertEqual(true_participant, test_study_data.participant)
+        self.assertEqual(true_uid, test_study_data.study_inst_uid)
 
 
 if __name__ == "__main__":

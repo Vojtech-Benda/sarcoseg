@@ -1,18 +1,26 @@
+import json
+import shutil
+from datetime import datetime
+from pathlib import Path
+from time import perf_counter
+from typing import Any, Union
+
 import nibabel as nib
 import numpy as np
-import skimage as sk
 import pandas as pd
-import os
-import shutil
-
-from time import perf_counter
-from pathlib import Path
-from typing import Union, Any
+import skimage as sk
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
 
-from src.classes import ImageData, MetricsData, Centroids
 from src import slogger
+from src.classes import (
+    Centroids,
+    ImageData,
+    LabkeyRow,
+    MetricsData,
+    SeriesData,
+    StudyData,
+)
 
 DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_L1": 31,
@@ -80,13 +88,13 @@ def get_vertebrae_body_centroids(
 
     """
     get the centroid in front of whole vertebrae mask centroid
-    
+
     - axis directions/coordinates:
     vertebrae mask centroid: (X, Y, Z) -> (R, A, S)
     centroids: (Y, Z) -> (A, S), centroids numpy shapes (n, 2), where n is number of centroids
-    
+
     - compare centroid coordinates in anterior (A) direction which increases towards anterior
-    - comparison is done in pixel/voxel space 
+    - comparison is done in pixel/voxel space
     """
     vert_body_centroid = comp_centroids[
         np.argmax(comp_centroids[:, 0] > vert_label_centroid[1])
@@ -164,9 +172,7 @@ def extract_slices(
         f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}"
     )
 
-    sliced_volume = ct_volume.slicer[
-        ..., slices_range[0] : slices_range[1]
-    ]  # nib slicer requires range [..., i:i + 1]
+    sliced_volume = ct_volume.slicer[..., slices_range[0] : slices_range[1]]
     sliced_volume = nib.as_closest_canonical(sliced_volume)
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
@@ -183,7 +189,10 @@ def extract_slices(
 
     return (
         ImageData(image=sliced_volume, path=output_filepath),
-        Centroids(vertebre_centroid=vert_centroid, body_centroid=body_centroid),
+        Centroids(
+            vertebre_centroid=vert_centroid.tolist(),
+            body_centroid=body_centroid.tolist(),
+        ),
         duration,
     )
 
@@ -246,8 +255,24 @@ def postprocess_tissue_masks(
 def compute_metrics(
     tissue_mask_data: ImageData,
     tissue_volume_data: ImageData,
-    series_df_tags: dict[str, Any] = None,
-):
+    patient_height: float | None = None,
+) -> MetricsData:
+    """Compute area and mean Hounsfield Unit for segmented tissue masks.
+    Also compute skeletal muscle index (SMI) if `patient_height` is given.
+
+    Units of computed metrics:
+        - area: cm^2
+        - mean_hu: HU
+        - SMI: cm^2 / m^2
+
+    Args:
+        tissue_mask_data (ImageData): Segmented tissue masks of SAT, VAT, IMAT and MUSCLE.
+        tissue_volume_data (ImageData): Input nifti volume.
+        patient_height (float | None, optional): Patient's height. Defaults to None.
+
+    Returns:
+        metrics (MetricsData): Computed metrics.
+    """
     if tissue_mask_data.spacing:
         spacing = tissue_mask_data.spacing
     elif tissue_volume_data.spacing:
@@ -258,10 +283,6 @@ def compute_metrics(
         spacing = (1.0, 1.0, 1.0)
 
     mask_arr = tissue_mask_data.image.get_fdata()
-    # if len(mask_arr.shape[:-1]) != len(spacing):
-    #     raise ValueError(
-    #         f"array shape {mask_arr.shape} does not match spacing shape {spacing}, needs to be (H x W x 1) or (H x W x D)"
-    #     )
 
     depth = mask_arr.shape[-1]  # get image size only
     if depth == 1:
@@ -271,47 +292,60 @@ def compute_metrics(
 
     tissue_arr = tissue_volume_data.image.get_fdata()
 
-    metrics_data = MetricsData()
-    metrics_data.area = {
+    area = {
         tissue: np.count_nonzero(mask_arr == label) * pixel_size
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
-    metrics_data.mean_hu = {
+    mean_hu = {
         tissue: np.mean(tissue_arr[mask_arr == label])
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
-    patient_height = series_df_tags.get("vyska_pac.", None)
+    smi = None
     if patient_height:
-        # skeletal muscle index (cm^2 / m^2) = muscle area (cm^2) / patient height (m^2)
-        metrics_data.skelet_muscle_index = metrics_data.area["muscle"] / (
-            (patient_height / 100.0) ** 2
-        )
-    return metrics_data
+        # skeletal muscle index (smi) (cm^2 / m^2) = muscle area (cm^2) / patient height (m^2)
+        smi = area["muscle"] / ((patient_height / 100.0) ** 2)
+    return MetricsData(area=area, mean_hu=mean_hu, skelet_muscle_index=smi)
 
 
-def read_patient_list(filepath: Union[str, Path]) -> Union[dict, None]:
+def read_patient_list(
+    filepath: Union[str, Path], columns: list[str] | None = None
+) -> Union[pd.DataFrame, None]:
     if isinstance(filepath, str):
         filepath = Path(filepath)
 
-    if not filepath.is_file():
-        logger.error(f"patient list at `{filepath}` is not a file")
-        return None
-    if not filepath.exists():
-        logger.error(f"patient list at `{filepath}` not found")
+    if not filepath.is_file() or not filepath.exists():
+        logger.error(f"patient list at `{filepath}` is not a file or doesn't exist")
         return None
 
     suffix = filepath.suffix
     if suffix == ".csv":
         df = pd.read_csv(
-            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+            filepath, index_col=False, header=0, dtype=str, usecols=columns
         )
     elif suffix in (".xlsx", ".xls"):
         df = pd.read_excel(
-            filepath, index_col=False, header=0, dtype=str, usecols=["participant"]
+            filepath, index_col=False, header=0, dtype=str, usecols=columns
         )
 
-    return df.participant.to_list()
+    return df
+
+
+def read_study_case(filepath: Union[str, Path]) -> StudyData:
+    """Deserialize study and series data from JSON to `StudyData`.
+
+    Args:
+        filepath (Union[str, Path]): Path to .json file.
+
+    Returns:
+        study_data (StudyData): Deserialized `StudyData` dataclass object.
+    """
+    with open(filepath, "r") as file:
+        data = json.load(file)
+        series_dict: dict[str, Any] = data.pop("series")
+        return StudyData(
+            **data, series={key: SeriesData(**val) for key, val in series_dict.items()}
+        )
 
 
 def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
@@ -332,3 +366,52 @@ def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
 def remove_dicom_dir(dirpath: Union[str, Path]):
     logger.info(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
+
+
+def make_report(
+    requested_study_cases: list[LabkeyRow],
+    output_dir: Path,
+    timestamp: str = None,
+    verbose: bool = False,
+):
+    if not timestamp:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    study_dirs = list(output_dir.glob("*"))
+    missing_studies = [
+        f"{pat.participant}, {pat.study_instance_uid}"
+        for pat in requested_study_cases
+        if output_dir.joinpath(pat.study_instance_uid) not in study_dirs
+    ]
+
+    finished_studies = []
+    for pat in requested_study_cases:
+        study = output_dir.joinpath(pat.study_instance_uid)
+        preproc = len(list(study.rglob("input_ct_volume.nii.gz")))
+        segment = len(list(study.rglob("tissue_mask_pp.nii.gz")))
+
+        if preproc or segment:
+            finished = (
+                f"{pat.participant} {pat.study_instance_uid}, {preproc}, {segment}"
+            )
+            finished_studies.append(finished)
+
+    report = f"""Sarcoseg-aio segmentation report from {timestamp}
+Image and metric data saved in: {output_dir}
+
+Total number of requested studies: {len(requested_study_cases)}
+Total number of missing studies: {len(missing_studies)}
+
+Requested participant, Study Instance UID, # of preprocessed series, # of segmented series:
+{"\n".join(finished_studies)}
+
+Patient studies not found in output:
+{"\n".join(missing_studies)}
+"""
+
+    report_path = output_dir.joinpath(f"report_{timestamp}.txt")
+    with open(report_path, "w") as file:
+        file.write(report)
+
+    logger.info(f"Segmentation report written to `{report_path}`")
+    logger.info(f"\n{report}")
