@@ -32,7 +32,7 @@ def setup_logger(logger: logging.Logger):
     logger.propagate = False
 
 
-def get_logger(logger_name="test-name"):
+def get_logger(logger_name="test-name") -> logging.Logger:
     logger = logging.getLogger(logger_name)
     if not logger.handlers:
         setup_logger(logger)
@@ -41,7 +41,7 @@ def get_logger(logger_name="test-name"):
 
 
 if __name__ == "__main__":
-    logger = get_logger(debug_mode=True)
+    logger = get_logger()
     logger.debug("debug message")
     logger.info("info message")
     logger.warning("warning message")

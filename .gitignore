@@ -5,7 +5,6 @@ outputs/
 download/
 
 # environment items
-.vscode/
 .venv/
 
 # project files
@@ -21,6 +20,7 @@ labkey_filter.py
 # ide dirs
 .vscode/*
 .idea/*
+.zed/
 
 # pycache
 __pycache__

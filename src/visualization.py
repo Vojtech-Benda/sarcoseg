@@ -1,10 +1,10 @@
-import numpy as np
-from skimage.color import label2rgb
-from nibabel.nifti1 import Nifti1Image
 from pathlib import Path
-from numpy.typing import NDArray
-import imageio
 
+import imageio
+import numpy as np
+from nibabel.nifti1 import Nifti1Image
+from numpy.typing import NDArray
+from skimage.color import label2rgb
 
 SPINE_COLORS = np.array(
     [

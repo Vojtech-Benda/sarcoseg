@@ -31,8 +31,7 @@ DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_S1": 26,
 }
 
-
-DEFAULT_TISSUE_CLASSES = {"sat": 1, "vat": 2, "imat": 3, "muscle": 4}
+DEFAULT_TISSUE_CLASSES = {"muscle": 1, "sat": 2, "vat": 3, "imat": 4} 
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
 
@@ -304,6 +303,7 @@ def compute_metrics(
     smi = None
     if patient_height:
         # skeletal muscle index (smi) (cm^2 / m^2) = muscle area (cm^2) / patient height (m^2)
+        # patient height is in cm^2
         smi = area["muscle"] / ((patient_height / 100.0) ** 2)
     return MetricsData(area=area, mean_hu=mean_hu, skelet_muscle_index=smi)
 
@@ -415,3 +415,9 @@ Patient studies not found in output:
 
     logger.info(f"Segmentation report written to `{report_path}`")
     logger.info(f"\n{report}")
+
+
+def read_json(path):
+    with open(path, "r") as f:
+        json_file = json.load(f)
+    return json_file

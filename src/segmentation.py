@@ -1,24 +1,23 @@
-from typing import Union
 from pathlib import Path
+import subprocess
 from time import perf_counter
-import pandas as pd
-from totalsegmentator.python_api import totalsegmentator
+from typing import Union
 
 import nibabel as nib
+import pandas as pd
+from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 from numpy import nan
-from nnunet.inference.predict import predict_cases
 
-from src import visualization
-from src import utils
-from src.utils import DEFAULT_VERTEBRA_CLASSES
+from src import slogger, utils, visualization
 from src.classes import ImageData, MetricsData, SegmentationResult, StudyData
-from src import slogger
-
+from src.utils import DEFAULT_VERTEBRA_CLASSES
 
 logger = slogger.get_logger(__name__)
 
 MODEL_DIR = Path("models", "muscle_fat_tissue_stanford_0_0_2")
 
+tissue_predictor = nnUNetPredictor()
+tissue_predictor.initialize_from_trained_model_folder("models/mazurowski_muscle_fat", use_folds=(5,))
 
 def segment_ct_study(
     input_dir: Union[str, Path],
@@ -72,11 +71,17 @@ def segment_ct_study(
             tissue_volume_data.path, series_output_dir
         )
 
+        # [TODO] check this and verify if it should be used
         processed_data, postproc_duration = utils.postprocess_tissue_masks(
             tissue_mask_data,
             tissue_volume_data,
         )
 
+        # [TODO] fix this, wrong label values
+        # nnunetv1:  DEFAULT_TISSUE_CLASSES = {"sat": 1, "vat": 2, "imat": 3, "muscle": 4}
+        # nnunetv2: "labels": {"background": 0, "muscle": 1, "sat": 2, "vat": 3, "muscle_fat": 4} 
+        
+        # [TODO] maybe replace skimage with simpleitk? 
         metrics = utils.compute_metrics(
             processed_data,
             tissue_volume_data,
@@ -146,24 +151,33 @@ def segment_spine(
         logger.info(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
-    spine_mask: nib.Nifti1Image = totalsegmentator(
-        input_nifti_path,
-        spine_mask_path,
-        fast=False,
-        ml=True,
-        quiet=True,
-        task="total",
-        roi_subset=vert_classes,
-        device="gpu",
-    )
+
+    command = [
+            "TotalSegmentator",
+            "-i",
+            str(input_nifti_path),
+            "-o",
+            str(spine_mask_path),
+            "--task",
+            "total",
+            "-ml",
+            "-ot",
+            "nifti",
+            "--fast",
+            "--device",
+            "gpu",
+            "--quiet",
+            "--roi_subset",
+        ] + list(vert_classes)
+
+    subprocess.run(args=command)
 
     duration = perf_counter() - start
     logger.info(f"spine segmentation finised in {duration:.2f} seconds")
 
-    spine_mask = nib.as_closest_canonical(spine_mask)
+    spine_mask = nib.as_closest_canonical(nib.load(spine_mask_path))
     spacing = spine_mask.header.get_zooms()
     return ImageData(image=spine_mask, path=spine_mask_path, spacing=spacing), duration
-
 
 def segment_tissues(
     tissue_volume_path: Union[Path, str], case_output_dir: Union[Path, str]
@@ -174,25 +188,13 @@ def segment_tissues(
     logger.info(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
-
+    print(f"{tissue_volume_path=}")
     start = perf_counter()
-    predict_cases(
-        model=str(MODEL_DIR),
-        list_of_lists=[[tissue_volume_path]],
-        output_filenames=[output_filepath],
-        folds="all",
-        save_npz=False,
-        num_threads_preprocessing=8,
-        num_threads_nifti_save=8,
-        segs_from_prev_stage=None,
-        do_tta=False,
-        mixed_precision=True,
-        overwrite_existing=True,
-        all_in_gpu=False,
-        step_size=0.5,
-        checkpoint_name="model_final_checkpoint",
-        segmentation_export_kwargs=None,
-        disable_postprocessing=True,
+    tissue_predictor.predict_from_files(
+        list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
+        output_folder_or_list_of_truncated_output_files=[str(output_filepath)],
+        num_processes_preprocessing=8,
+        num_processes_segmentation_export=8,
     )
 
     duration = perf_counter() - start

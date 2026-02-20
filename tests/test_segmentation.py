@@ -3,13 +3,12 @@ from pathlib import Path
 
 import numpy as np
 
-from src.classes import MetricsData, Centroids, SegmentationResult
-from src import segmentation
-
+from src import segmentation, visualization, utils
+from src.classes import Centroids, MetricsData, SegmentationResult
 
 class TestSegmentation(unittest.TestCase):
     def test_study_segment(self):
-        test_uid = "1.3.6.1.4.1.36302.1.1.2.67386.4681372"
+        test_uid = "1.3.6.1.4.1.36302.1.1.2.67388.4692994"
         path = Path("tests/output/", test_uid)
         segmentation.segment_ct_study(
             input_dir=path,
@@ -30,7 +29,12 @@ class TestSegmentation(unittest.TestCase):
         pass
 
     def test_compute_metrics(self):
-        pass
+        tissue_volume = utils.read_volume("tests\\output\\1.3.6.1.4.1.36302.1.1.2.67386.4681372\\1.3.12.2.1107.5.1.4.75968.30000025063005325811100017182\\tissue_slices.nii.gz")
+        tissue_mask = utils.read_volume("tests\\output\\1.3.6.1.4.1.36302.1.1.2.67386.4681372\\1.3.12.2.1107.5.1.4.75968.30000025063005325811100017182\\tissue_mask.nii.gz")
+
+        
+        metrics = utils.compute_metrics(tissue_mask, tissue_volume, 170.)
+        print(metrics)
 
     def test_mask_overlays(self):
         pass
@@ -69,6 +73,14 @@ class TestSegmentation(unittest.TestCase):
         seg_result.metrics_dict = all_metrics
 
         seg_result._write_to_json(output_dir)
+
+
+class MaskOverlay(unittest.TestCase):
+    def test_overlay_spine(self):
+        pass
+
+    def test_overlay_tissue(self):
+        pass
 
 
 if __name__ == "__main__":

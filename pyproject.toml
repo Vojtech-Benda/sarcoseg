@@ -17,4 +17,8 @@ dependencies = [
     "matplotlib>=3.10.5",
     "scikit-image>=0.25.1",
     "labkey>=3.4.0",
+    "simpleitk>=2.5.3",
+    "dcm2niix>=1.0.20250506",
+    "dotenv>=0.9.9",
+    "pynetdicom>=3.0.4",
 ]
