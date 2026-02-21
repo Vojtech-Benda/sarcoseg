@@ -37,7 +37,7 @@ def get_args():
     )
     parser.add_argument(
         "-pl",
-        "--patient-list",
+        "--participant-list",
         type=str,
         help="path to list of labkey data (.csv/.txt)",
         required=True,
@@ -65,7 +65,7 @@ def main(args: argparse.Namespace):
     main_logger = slogger.get_logger(__name__)
 
     participant_list = utils.read_patient_list(args.participant_list)
-    if not participant_list:
+    if participant_list is None:
         sys.exit(-1)
 
     participant_list = participant_list.participant.to_list()
@@ -145,6 +145,8 @@ def main(args: argparse.Namespace):
             save_mask_overlays=True,
             study_case=study_data,
         )
+
+        print(metrics_results)
 
         if args.upload_labkey:
             # [TODO]: send dicom data to labkey

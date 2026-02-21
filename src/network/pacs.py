@@ -1,11 +1,12 @@
-import sys
 import os
 import subprocess
-from dotenv import dotenv_values
+import sys
 from pathlib import Path
 
+from dotenv import dotenv_values
 from pynetdicom.apps.echoscu import echoscu
 from pynetdicom.apps.movescu import movescu
+
 from src import slogger
 
 logger = slogger.get_logger(__name__)
@@ -32,7 +33,8 @@ class PacsAPI:
         os.makedirs(download_directory, exist_ok=True)
 
         args = [
-            movescu.__file__,
+            # sys.executable,
+            # movescu.__file__,
             self.ip,
             str(self.port),
             "-aec",
@@ -53,9 +55,14 @@ class PacsAPI:
         ]
 
         logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
-        ret = subprocess.run(args, capture_output=True, text=True)
+        # ret = subprocess.run(args, capture_output=True, text=True)
+        try:
+            movescu.main(args)
+        except SystemExit:
+            logger.info("movescu finished and tried to exit; continuing execution")
 
         if len(os.listdir(download_directory)) == 0:
+            os.rmdir(download_directory)
             logger.info(
                 f"C-MOVE failed downloading data for StudyInstanceUID: {study_inst_uid}"
             )
