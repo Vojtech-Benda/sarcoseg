@@ -70,7 +70,7 @@ def main(args: argparse.Namespace):
 
     participant_list = participant_list.participant.to_list()
 
-    labkey_api = database.labkey_from_dotenv(verbose=verbose)
+    labkey_api = database.LabkeyAPI.init_from_json(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
@@ -99,7 +99,10 @@ def main(args: argparse.Namespace):
         )
         sys.exit(-1)
 
-    pacs_api = pacs.pacs_from_dotenv(verbose=verbose)
+    pacs_api = pacs.PacsAPI.init_from_json(verbose=verbose)
+    if pacs_api is None:
+        sys.exit(-1)
+
     output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 

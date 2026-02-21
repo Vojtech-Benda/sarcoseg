@@ -1,12 +1,12 @@
 import unittest
 from pathlib import Path
 
-from src.network import pacs, database
-from dotenv import dotenv_values
+from src.network import database, pacs
+from src.utils import read_json
 
 
 class TestPacs(unittest.TestCase):
-    api = pacs.pacs_from_dotenv()
+    api = pacs.PacsAPI.init_from_json()
     STUDY_INST_UID: str
 
     def test_echoscu(self):
@@ -14,16 +14,15 @@ class TestPacs(unittest.TestCase):
         self.assertEqual(ret.returncode, 0)
 
     def test_movescu(self):
-        self.STUDY_INST_UID = dotenv_values().get("test_study_uid")
+        self.STUDY_INST_UID = read_json("./network.json")["test_participant"].get(
+            "test_study_uid"
+        )
         validate_study_uid(self.STUDY_INST_UID)
 
         if not self.STUDY_INST_UID:
             self.fail(
                 f"test_movescu requires a valid StudyInstanceUID, given UID is `{self.STUDY_INST_UID}`"
             )
-
-        if "." not in self.STUDY_INST_UID:
-            self.fail(f"given StudyInstanceUID is not valid: `{self.STUDY_INST_UID}`")
 
         download_dir = Path(f"./tests/download/{self.STUDY_INST_UID}")
 
@@ -41,7 +40,7 @@ class TestPacs(unittest.TestCase):
 
 
 class TestLabkey(unittest.TestCase):
-    api = database.labkey_from_dotenv(verbose=True)
+    api = database.LabkeyAPI.init_from_json(verbose=True)
 
     def test_labkey_connection(self):
         self.assertTrue(self.api.is_labkey_reachable())

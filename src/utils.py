@@ -31,7 +31,7 @@ DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_S1": 26,
 }
 
-DEFAULT_TISSUE_CLASSES = {"muscle": 1, "sat": 2, "vat": 3, "imat": 4} 
+DEFAULT_TISSUE_CLASSES = {"muscle": 1, "sat": 2, "vat": 3, "imat": 4}
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
 

@@ -3,11 +3,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dotenv import dotenv_values
 from pynetdicom.apps.echoscu import echoscu
 from pynetdicom.apps.movescu import movescu
 
 from src import slogger
+from src.utils import read_json
 
 logger = slogger.get_logger(__name__)
 
@@ -96,22 +96,26 @@ class PacsAPI:
                 logger.info(f"ECHOSCU stderr: {ret.stderr}")
         return ret
 
+    @classmethod
+    def init_from_json(cls, verbose: bool = False):
+        conf = read_json("./network.json")["pacs"]
 
-def pacs_from_dotenv(verbose: bool = False):
-    config = dotenv_values()
+        if verbose:
+            logger.info(f"initializing PACS API with: {conf}")
 
-    if verbose:
-        logger.info(config)
+        if not all(conf.values()):
+            logger.error(f"some fields are missing values: {conf}")
+            return None
 
-    return PacsAPI(
-        config["pacs_ip"],
-        int(config["pacs_port"]),
-        config["aet"],
-        config["aec"],
-        int(config["store_port"]),
-    )
+        return cls(
+            conf["ip"],
+            int(conf["port"]),
+            conf["aet"],
+            conf["aec"],
+            int(conf["store_port"]),
+        )
 
 
 if __name__ == "__main__":
-    pacs = PacsAPI("localhost", 4242, "VOJTPC", "ORTHANC", 2000)
+    pacs = PacsAPI.init_from_json()
     pacs._echoscu()

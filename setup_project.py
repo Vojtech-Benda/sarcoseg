@@ -1,8 +1,9 @@
 import argparse
+import json
 from pathlib import Path
-from zipfile import ZipFile
 
-import huggingface_hub as hf
+# from zipfile import ZipFile
+# import huggingface_hub as hf
 from totalsegmentator.python_api import download_pretrained_weights
 
 from src.slogger import get_logger
@@ -27,6 +28,30 @@ def setup_project(
         d.mkdir()
         logger.info(f"created directory {d}")
     logger.info("available models for download in src/models.json")
+
+    conf_file = project_dir / "network.json"
+
+    # TODO: improve serialization/deserialization in future
+    if not conf_file.exists():
+        with open(conf_file, "w") as file:
+            conf = {
+                "pacs": {
+                    "ip": "",
+                    "port": -1,
+                    "aet": "",
+                    "aec": "",
+                    "aem": "",
+                    "store_port": -1,
+                },
+                "labkey": {"domain": "", "container_path": ""},
+                "test_participant": {
+                    "test_study_uid": "",
+                },
+            }
+            json.dump(conf, file, indent=4)
+        logger.info(f"created network configuration file `{conf_file}`")
+    else:
+        logger.warning(f"network configuration file `{conf_file}` already exists")
 
     # download_models(project_dir)
 
@@ -62,9 +87,10 @@ def setup_project(
     """
 
     task_ids = [291, 292, 293, 294, 295, 298]
-    print("downloading TotalSegmentator models")
+    logger.info("downloading TotalSegmentator models")
     for tid in task_ids:
         download_pretrained_weights(tid)
+    logger.info(f"finished downloading TotalSegmentator models: {task_ids}")
 
 
 def get_args():

@@ -1,15 +1,15 @@
 import os
 from pathlib import Path
 
-from labkey.query import QueryFilter
 import pandas as pd
+from labkey.query import QueryFilter
 from pydicom import dcmread
 from pynetdicom.apps.findscu import findscu
 
 from src.network import database, pacs
 
 """
-This script is intended to update columns in StudyInstanceUID and PACS_CISLO on Labkey for all CT studies. 
+This script is intended to update columns in StudyInstanceUID and PACS_CISLO on Labkey for all CT studies.
 """
 
 columns = [
@@ -21,7 +21,7 @@ columns = [
     "StudyInstanceUID",
 ]
 
-labkey_api = database.labkey_from_dotenv()
+labkey_api = database.LabkeyAPI.init_from_json()
 response = labkey_api.query.select_rows(
     schema_name="lists",
     query_name="RDG-CT-Sarko-All",
@@ -36,7 +36,7 @@ raw_rows = [
 print(f"returned rows {len(raw_rows)}")
 
 
-pacs_api = pacs.pacs_from_dotenv()
+pacs_api = pacs.PacsAPI.init_from_json()
 
 base_args = [
     pacs_api.ip,

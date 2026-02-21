@@ -1,10 +1,10 @@
 import requests
-from dotenv import dotenv_values
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 
 from src import slogger
 from src.classes import LabkeyRow
+from src.utils import read_json
 
 logger = slogger.get_logger(__name__)
 
@@ -142,6 +142,19 @@ class LabkeyAPI(APIWrapper):
             f"excluding {len(finished_studies)} participants due to existing segmentation results"
         )
         return list(set(input_participants).symmetric_difference(finished_studies))
+
+    @classmethod
+    def init_from_json(cls, verbose: bool = False):
+        conf = read_json("./network.json")["labkey"]
+
+        if verbose:
+            logger.info(f"initializing Labkey API with: {conf}")
+
+        if not all(conf.values()):
+            logger.error(f"some fields are missing values: {conf}")
+            return None
+
+        return cls(conf["domain"], conf["container_path"], verbose=verbose)
 
 
 def labkey_from_dotenv(verbose: bool = False) -> LabkeyAPI:
