@@ -3,7 +3,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Union
+from typing import Any
 
 import nibabel as nib
 import numpy as np
@@ -16,7 +16,6 @@ from src import slogger
 from src.classes import (
     Centroids,
     ImageData,
-    LabkeyRow,
     MetricsData,
     SeriesData,
     StudyData,
@@ -31,7 +30,7 @@ DEFAULT_VERTEBRA_CLASSES = {
     "vertebrae_S1": 26,
 }
 
-DEFAULT_TISSUE_CLASSES = {"muscle": 1, "sat": 2, "vat": 3, "imat": 4}
+DEFAULT_TISSUE_CLASSES: dict[str, int] = {"muscle": 1, "sat": 2, "vat": 3, "imat": 4}
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
 
@@ -56,20 +55,20 @@ def get_vertebrae_body_centroids(
             Vertebrae centroid in voxel space.
     """
 
-    mask_arr = mask.get_fdata().astype(np.uint8)
+    mask_arr: NDArray = mask.get_fdata().astype(np.uint8)
 
     # get sagittal slice at L3's center
-    vert_label_centroid = np.rint(sk.measure.centroid(mask_arr == vert_labels)).astype(
-        np.uint16
-    )
-    sagittal_slice_arr = mask_arr[vert_label_centroid[0], ...]
+    vert_label_centroid: NDArray = np.rint(
+        sk.measure.centroid(mask_arr == vert_labels)
+    ).astype(np.uint16)
+    sagittal_slice_arr: NDArray = mask_arr[vert_label_centroid[0], ...]
     sagittal_l3 = np.where(sagittal_slice_arr == vert_labels, vert_labels, 0)
 
     # relabel L3 parts
-    vert_components = sk.measure.label(sagittal_l3)
+    vert_components: NDArray = sk.measure.label(sagittal_l3)
 
     # get 2 largest components
-    compoments_pixel_num = {
+    compoments_pixel_num: dict[int, int] = {
         prop.label: prop.num_pixels for prop in sk.measure.regionprops(vert_components)
     }
     largest_components_labels = sorted(
@@ -103,9 +102,9 @@ def get_vertebrae_body_centroids(
 
 
 def extract_slices(
-    ct_volume: Union[Nifti1Image, Path, str],
-    spine_mask: Union[Nifti1Image, Path, str],
-    output_dir: Union[Path, str],
+    ct_volume: Nifti1Image | Path | str,
+    spine_mask: Nifti1Image | Path | str,
+    output_dir: Path | str,
     slices_num: int = 0,
 ) -> tuple[ImageData, Centroids, float]:
     """
@@ -203,10 +202,10 @@ def postprocess_tissue_masks(
     """
     store tissue labels in separate z-axis
     tissue      | label     | z-axis index
-    sat         | 1         | 0
-    vat         | 2         | 1
-    imat        | 3         | 2
-    muscle      | 4         | 3
+    muscle      | 1         | 0
+    sat         | 2         | 1
+    vat         | 3         | 2
+    imat        | 4         | 3
     """
     start = perf_counter()
     mask_arr = mask_data.image.get_fdata().astype(np.uint8)
@@ -309,8 +308,8 @@ def compute_metrics(
 
 
 def read_patient_list(
-    filepath: Union[str, Path], columns: list[str] | None = None
-) -> Union[pd.DataFrame, None]:
+    filepath: str | Path, columns: list[str] | None = None
+) -> pd.DataFrame | None:
     if isinstance(filepath, str):
         filepath = Path(filepath)
 
@@ -331,11 +330,11 @@ def read_patient_list(
     return df
 
 
-def read_study_case(filepath: Union[str, Path]) -> StudyData:
+def read_study_case(filepath: str | Path) -> StudyData:
     """Deserialize study and series data from JSON to `StudyData`.
 
     Args:
-        filepath (Union[str, Path]): Path to .json file.
+        filepath (str | Path): Path to .json file.
 
     Returns:
         study_data (StudyData): Deserialized `StudyData` dataclass object.
@@ -352,26 +351,26 @@ def get_series_tags(df_tags: pd.DataFrame, series_inst_uid: str):
     return df_tags.loc[df_tags["series_inst_uid"] == series_inst_uid].iloc[0].to_dict()
 
 
-def read_volume(path: Union[Path, str]):
+def read_volume(path: Path | str):
     volume = nib.as_closest_canonical(nib.load(path))
     spacing = volume.header.get_zooms()
-    return ImageData(image=volume, spacing=spacing, path=path)
+    return ImageData(image=volume, spacing=spacing, path=Path(path))
 
 
-def remove_empty_segmentation_dir(dirpath: Union[str, Path]):
+def remove_empty_segmentation_dir(dirpath: str | Path):
     logger.info(f"removing empty segmentation directory `{dirpath}`")
     shutil.rmtree(dirpath)
 
 
-def remove_dicom_dir(dirpath: Union[str, Path]):
+def remove_dicom_dir(dirpath: str | Path):
     logger.info(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
 
 
 def make_report(
-    requested_study_cases: list[LabkeyRow],
+    requested_study_cases: list[StudyData],
     output_dir: Path,
-    timestamp: str = None,
+    timestamp: str | None = None,
     verbose: bool = False,
 ):
     if not timestamp:
@@ -379,21 +378,19 @@ def make_report(
 
     study_dirs = list(output_dir.glob("*"))
     missing_studies = [
-        f"{pat.participant}, {pat.study_instance_uid}"
+        f"{pat.participant}, {pat.study_inst_uid}"
         for pat in requested_study_cases
-        if output_dir.joinpath(pat.study_instance_uid) not in study_dirs
+        if output_dir.joinpath(pat.study_inst_uid) not in study_dirs
     ]
 
     finished_studies = []
     for pat in requested_study_cases:
-        study = output_dir.joinpath(pat.study_instance_uid)
+        study = output_dir.joinpath(pat.study_inst_uid)
         preproc = len(list(study.rglob("input_ct_volume.nii.gz")))
         segment = len(list(study.rglob("tissue_mask_pp.nii.gz")))
 
         if preproc or segment:
-            finished = (
-                f"{pat.participant} {pat.study_instance_uid}, {preproc}, {segment}"
-            )
+            finished = f"{pat.participant} {pat.study_inst_uid}, {preproc}, {segment}"
             finished_studies.append(finished)
 
     report = f"""Sarcoseg-aio segmentation report from {timestamp}

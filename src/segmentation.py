@@ -1,7 +1,6 @@
 import subprocess
 from pathlib import Path
 from time import perf_counter
-from typing import Union
 
 import nibabel as nib
 import pandas as pd
@@ -23,21 +22,19 @@ tissue_predictor.initialize_from_trained_model_folder(
 
 
 def segment_ct_study(
-    input_dir: Union[str, Path],
-    output_dir: Union[str, Path],
+    input_dir: str | Path,
+    output_dir: str | Path,
+    study_case: StudyData | None = None,
     slices_num: int = 0,
     save_mask_overlays: bool = False,
-    study_case: StudyData = None,
-) -> list[MetricsData]:
-    if isinstance(output_dir, str):
-        Path(output_dir)
-
-    if isinstance(input_dir, str):
-        Path(input_dir)
+) -> SegmentationResult:
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
 
     if not study_case:
-        path = input_dir.joinpath(f"dicom_tags_{input_dir.name}.json")
-        study_case = utils.read_study_case(path)
+        study_case = utils.read_study_case(
+            input_dir.joinpath(f"dicom_tags_{input_dir.name}.json")
+        )
 
     series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
     logger.info("-" * 25)
@@ -115,9 +112,9 @@ def segment_ct_study(
 
 
 def segment_spine(
-    input_nifti_path: Union[str, Path],
-    output_dir: Union[str, Path] = None,
-    vert_classes: list[str] = None,
+    input_nifti_path: str | Path,
+    output_dir: str | Path = "./",
+    vert_classes: list[str] | None = None,
     overwrite_output: bool = False,
 ) -> tuple[ImageData, float]:
     """
@@ -136,8 +133,8 @@ def segment_spine(
         - **duration** (float): Duration of segmentation.
     """
 
-    if isinstance(output_dir, str):
-        output_dir = Path(output_dir)
+    input_nifti_path = Path(input_nifti_path)
+    output_dir = Path(output_dir)
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
 
@@ -178,10 +175,10 @@ def segment_spine(
 
 
 def segment_tissues(
-    tissue_volume_path: Union[Path, str], case_output_dir: Union[Path, str]
+    tissue_volume_path: Path | str, case_output_dir: Path | str
 ) -> tuple[ImageData, float]:
-    if isinstance(case_output_dir, str):
-        case_output_dir = Path(case_output_dir)
+    tissue_volume_path = Path(tissue_volume_path)
+    case_output_dir = Path(case_output_dir)
 
     logger.info(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
 
@@ -216,7 +213,7 @@ def write_metric_results(metric_results: list[MetricsData], output_study_dir: Pa
 # [TODO]: check this and if it needs to be used
 # maybe use it as a ArgumentParser command
 def collect_all_metric_results(
-    input_dir: Union[str, Path], write_to_csv: bool = False
+    input_dir: str | Path, write_to_csv: bool = False
 ) -> pd.DataFrame:
     if isinstance(input_dir, str):
         input_dir = Path(input_dir)

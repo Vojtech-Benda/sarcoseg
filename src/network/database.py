@@ -5,7 +5,7 @@ from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 
 from src import slogger
-from src.classes import LabkeyRow, StudyData
+from src.classes import StudyData
 from src.utils import read_json
 
 logger = slogger.get_logger(__name__)
@@ -60,7 +60,7 @@ class LabkeyAPI(APIWrapper):
         max_rows: int = -1,
         filter_dict: dict[str, list[str]] | None = None,
         sanitize_rows: bool = False,
-    ) -> list[StudyData] | None:
+    ) -> list[StudyData]:
         logger.info("labkey query:")
         logger.info(
             f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
@@ -89,7 +89,7 @@ class LabkeyAPI(APIWrapper):
         logger.info(f"returned rows: {len(rows)}")
         if len(rows) == 0:
             logger.warning("no returned rows")
-            return None
+            return []
 
         if sanitize_rows:
             return self.sanitize_response_data(rows)
@@ -115,7 +115,7 @@ class LabkeyAPI(APIWrapper):
 
         logger.info(response)
 
-    def exclude_finished_studies(self, input_participants: list[str]):
+    def exclude_finished_studies(self, input_participants: list[str]) -> list[str]:
         """Query Labkey `CTSegmentationData` table with input participants and exclude participants with finished segmentation.
         If the queried table has no data, ie empty response, `input_participants` is returned instead.
 
@@ -126,27 +126,27 @@ class LabkeyAPI(APIWrapper):
             participants (list[str]): List of participants excluding participants existing in the queried table.
         """
 
-        logger.info("checking for ")
+        logger.info("checking for participants with finished segmnetations")
 
         rows = self._select_rows(
             schema_name="lists",
             query_name="CTSegmentationData",
-            columns=["study_inst_uid", "participant"],
+            columns=["study_inst_uid", "PARTICIPANT"],
             filter_dict={"PARTICIPANT": input_participants},
-            sanitize_rows=True,
+            sanitize_rows=False,
         )
 
         if not rows:
             return input_participants
 
-        finished_studies = set([row["participant"] for row in rows])
+        finished_studies = set([row["PARTICIPANT"] for row in rows])
         logger.info(
             f"excluding {len(finished_studies)} participants due to existing segmentation results"
         )
         return list(set(input_participants).symmetric_difference(finished_studies))
 
     @classmethod
-    def init_from_json(cls, verbose: bool = False) -> Self | None:
+    def init_from_json(cls, verbose: bool = False) -> Self:
         """Initialize Labkey API with configuration values from .env file.
 
         Args:
@@ -162,7 +162,7 @@ class LabkeyAPI(APIWrapper):
 
         if not all(conf.values()):
             logger.error(f"some fields are missing values: {conf}")
-            return None
+            raise ValueError("Unable to initialize LabkeyAPI")
 
         return cls(conf["domain"], conf["container_path"], verbose=verbose)
 

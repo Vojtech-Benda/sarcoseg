@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from src.classes import StudyData
 from src.network import database, pacs
 from src.utils import read_json
 
@@ -56,10 +57,9 @@ class TestLabkey(unittest.TestCase):
         ]
         labkey_data = self.api.sanitize_response_data(rows)
         true_labkey_data = [
-            database.LabkeyRow(
-                patient_id="0124",
+            StudyData(
                 participant="PT001",
-                study_instance_uid="1.2.3",
+                study_inst_uid="1.2.3",
                 patient_height=179.0,
             )
         ]

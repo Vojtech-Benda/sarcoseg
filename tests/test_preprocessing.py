@@ -31,7 +31,7 @@ class TestPreprocessDicom(unittest.TestCase):
         row = LabkeyRow(true_participant, patient_height=170.0)
 
         test_study_data = preprocessing.preprocess_dicom_study(
-            input_path, output_path, labkey_case=row
+            input_path, output_path, study_case=row
         )
 
         self.assertEqual(test_study_data.participant, true_participant)

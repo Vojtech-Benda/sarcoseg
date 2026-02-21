@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Self, Union
+from typing import Any, Self
 
 import pandas as pd
 from nibabel.nifti1 import Nifti1Image
@@ -13,6 +13,7 @@ from src import slogger
 logger = slogger.get_logger(__name__)
 
 
+# TODO: check this for removal
 @dataclass
 class LabkeyRow:
     row_id: str
@@ -40,9 +41,9 @@ class LabkeyRow:
 
 @dataclass
 class SeriesData:
-    series_inst_uid: str | None = None
+    series_inst_uid: str
     description: str | None = None
-    filepaths: list[Path] | None = field(default=None, repr=False)
+    filepaths: list[Path] = field(default_factory=list, repr=False)
     filepaths_num: int | None = field(default=None, repr=False)
     slice_thickness: float | None = field(default=None, repr=False)
     convolution_kernel: str | None = field(default=None, repr=False)
@@ -58,8 +59,8 @@ class SeriesData:
 @dataclass
 class StudyData:
     participant: str
+    study_inst_uid: str
     row_id: str | None = field(default=None, compare=False, repr=False)
-    study_inst_uid: str | None = field(default=None, compare=False)
     patient_id: str | None = field(default=None, repr=False, compare=False)
     study_date: str | None = field(default=None, repr=False, compare=False)
     patient_height: float | int | None = field(default=None, repr=False, compare=False)
@@ -87,18 +88,18 @@ class StudyData:
     def from_labkey_row(cls, row: dict[str, Any]) -> Self:
         return cls(
             participant=row.get("PARTICIPANT"),
-            row_id=row.get("ID"),
             study_inst_uid=row.get("STUDY_INSTANCE_UID"),
+            row_id=row.get("ID"),
             patient_id=row.get("RODNE_CISLO"),
             patient_height=row.get("VYSKA_PAC."),
         )
 
-    def get_series(self, series_uid: str) -> Union[SeriesData, None]:
+    def get_series(self, series_uid: str) -> SeriesData | None:
         return self.series.get(series_uid)
 
     def _write_to_json(
         self,
-        output_dir: Union[str, Path],
+        output_dir: str | Path,
         exclude_fields: list[str] | None = None,
     ):
         if isinstance(output_dir, str):
@@ -137,30 +138,31 @@ class StudyData:
 
 @dataclass
 class ImageData:
-    image: Union[Nifti1Image, NDArray]
+    image: Nifti1Image | NDArray
     path: Path
-    spacing: Optional[NDArray] = None
+    spacing: NDArray | None = None
 
 
 @dataclass
 class Centroids:
-    vertebre_centroid: list
-    body_centroid: list
+    vertebre_centroid: list = field(default_factory=list)
+    body_centroid: list = field(default_factory=list)
 
 
 @dataclass
 class MetricsData:
     area: dict[str, Any]
     mean_hu: dict[str, Any]
-    skelet_muscle_index: Optional[float] = None
+    skelet_muscle_index: float | None = None
 
-    series_inst_uid: Optional[str] = None
+    series_inst_uid: str | None = None
     contrast_phase: str | None = None
 
-    duration: Optional[float] = None
-    centroids: Optional[Centroids] = None
+    duration: float | None = None
+    centroids: Centroids = field(default_factory=Centroids)
 
     def _to_dict(self):
+        # FIXME: fix and test this
         row = {}
         row.update(self.patient_data)
         row.update({f"area_{k}": v for k, v in self.area.items()})
@@ -179,7 +181,7 @@ class MetricsData:
 class SegmentationResult:
     participant: str
     study_inst_uid: str
-    patient_height: str | None = None
+    patient_height: float | None = None
 
     metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
 
@@ -191,7 +193,7 @@ class SegmentationResult:
             patient_height=study_data.patient_height,
         )
 
-    def _write_to_json(self, output_dir: Union[str, Path], exclude_fields: list[str]):
+    def _write_to_json(self, output_dir: str | Path, exclude_fields: list[str]):
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
 
