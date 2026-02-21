@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import dcm2niix
 import pandas as pd
@@ -40,7 +40,7 @@ def preprocess_dicom_study(
     input_dir: Union[str, Path],
     output_dir: Union[str, Path] = Path("./inputs"),
     labkey_case: LabkeyRow | None = None,
-) -> Union[StudyData, None]:
+) -> Optional[StudyData]:
     if isinstance(input_dir, str):
         input_dir = Path(input_dir)
 

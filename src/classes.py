@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import pandas as pd
 from nibabel.nifti1 import Nifti1Image
@@ -124,28 +124,28 @@ class StudyData:
 
 @dataclass
 class ImageData:
-    image: Union[Nifti1Image, NDArray] = None
-    spacing: NDArray = None
-    path: Path = None
+    image: Union[Nifti1Image, NDArray]
+    path: Path
+    spacing: Optional[NDArray] = None
 
 
 @dataclass
 class Centroids:
-    vertebre_centroid: list = None
-    body_centroid: list = None
+    vertebre_centroid: list
+    body_centroid: list
 
 
 @dataclass
 class MetricsData:
-    series_inst_uid: str | None = None
+    area: dict[str, Any]
+    mean_hu: dict[str, Any]
+    skelet_muscle_index: Optional[float] = None
+
+    series_inst_uid: Optional[str] = None
     contrast_phase: str | None = None
 
-    area: dict[str, Any] = None
-    mean_hu: dict[str, Any] = None
-    skelet_muscle_index: float = None
-
-    duration: float = None
-    centroids: Centroids = None
+    duration: Optional[float] = None
+    centroids: Optional[Centroids] = None
 
     def _to_dict(self):
         row = {}
@@ -178,11 +178,7 @@ class SegmentationResult:
             patient_height=study_data.patient_height,
         )
 
-    def _write_to_json(
-        self,
-        output_dir: Union[str, Path],
-        exclude_fields: list[str] = None,
-    ):
+    def _write_to_json(self, output_dir: Union[str, Path], exclude_fields: list[str]):
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
 

@@ -2,8 +2,10 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from src import preprocessing, segmentation, slogger, utils
+from src.classes import StudyData
 from src.network import database, pacs
 
 
@@ -70,7 +72,7 @@ def main(args: argparse.Namespace):
 
     participant_list = participant_list.participant.to_list()
 
-    labkey_api = database.LabkeyAPI.init_from_json(verbose=verbose)
+    labkey_api: database.LabkeyAPI = database.LabkeyAPI.init_from_json(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
@@ -127,7 +129,7 @@ def main(args: argparse.Namespace):
         main_logger.info(
             f"preprocessing study {case_study.study_instance_uid} patient {case_study.participant}"
         )
-        study_data = preprocessing.preprocess_dicom_study(
+        study_data: Optional[StudyData] = preprocessing.preprocess_dicom_study(
             input_study_dir,
             output_study_dir,
             case_study,
@@ -152,16 +154,16 @@ def main(args: argparse.Namespace):
         print(metrics_results)
 
         if args.upload_labkey:
-            # [TODO]: send dicom data to labkey
-            # [TESTME]:
+            # TODO: send dicom data to labkey
+            # TEST:
             labkey_api._upload_data(
                 schema_name="lists",
                 query_name="CTVysetreni",
                 rows=study_data._to_list_of_dicts(),
             )
 
-            # [TODO]: send segmentation data to labkey
-            # [TESTME]:
+            # TODO: send segmentation data to labkey
+            # TEST:
             metrics_data = [d._to_dict() for d in metrics_results]
             labkey_api._upload_data(
                 schema_name="lists",
