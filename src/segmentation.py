@@ -47,8 +47,6 @@ def segment_ct_study(
 
     seg_result = SegmentationResult._from_study_case(study_case)
 
-    dict_of_metrics: dict[str, MetricsData] = {}
-
     for series_filepath in series_nifti_filepaths:
         input_volume_data: ImageData = utils.read_volume(series_filepath)
 

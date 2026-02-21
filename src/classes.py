@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Self, Union
 
 import pandas as pd
 from nibabel.nifti1 import Nifti1Image
@@ -15,6 +15,7 @@ logger = slogger.get_logger(__name__)
 
 @dataclass
 class LabkeyRow:
+    row_id: str
     # patient_id: str
     # study_date: str
     participant: str
@@ -56,15 +57,19 @@ class SeriesData:
 
 @dataclass
 class StudyData:
-    patient_id: str | None = None
-    participant: str | None = None
-    study_inst_uid: str | None = None
-    study_date: str | None = None
-    patient_height: str | None = None
-    series: dict[str, SeriesData] = field(default_factory=list)
+    participant: str
+    row_id: str | None = field(default=None, compare=False, repr=False)
+    study_inst_uid: str | None = field(default=None, compare=False)
+    patient_id: str | None = field(default=None, repr=False, compare=False)
+    study_date: str | None = field(default=None, repr=False, compare=False)
+    patient_height: float | int | None = field(default=None, repr=False, compare=False)
+    series: dict[str, SeriesData] = field(default_factory=dict)
 
+    """
     @classmethod
-    def _from_dicom_file(cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]):
+    def _from_dicom_file(
+        cls, labkey_data: LabkeyRow, dicom_file: Union[Path, str]
+    ) -> Self:
         ds = dcmread(
             dicom_file,
             stop_before_pixels=True,
@@ -76,6 +81,17 @@ class StudyData:
             study_inst_uid=ds.StudyInstanceUID,
             study_date=ds.StudyDate,
         )
+    """
+
+    @classmethod
+    def from_labkey_row(cls, row: dict[str, Any]) -> Self:
+        return cls(
+            participant=row.get("PARTICIPANT"),
+            row_id=row.get("ID"),
+            study_inst_uid=row.get("STUDY_INSTANCE_UID"),
+            patient_id=row.get("RODNE_CISLO"),
+            patient_height=row.get("VYSKA_PAC."),
+        )
 
     def get_series(self, series_uid: str) -> Union[SeriesData, None]:
         return self.series.get(series_uid)
@@ -83,7 +99,7 @@ class StudyData:
     def _write_to_json(
         self,
         output_dir: Union[str, Path],
-        exclude_fields: list[str] = None,
+        exclude_fields: list[str] | None = None,
     ):
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
@@ -110,16 +126,13 @@ class StudyData:
             f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}\nfields excluded: {exclude}"
         )
 
-    def _to_list_of_dicts(self, list_of_series: list[SeriesData] | None = None):
-        return [
-            {
-                "participant": self.participant,
-                "study_inst_uid": self.study_inst_uid,
-                "study_date": self.study_date,
-            }
-            | series.__dict__
-            for series in list_of_series
-        ]
+    def _to_list_of_dicts(self):
+        _study = {
+            "participant": self.participant,
+            "study_inst_uid": self.study_inst_uid,
+            "study_date": self.study_date,
+        }
+        return [_study | series.__dict__ for series in self.series.values()]
 
 
 @dataclass

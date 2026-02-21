@@ -72,7 +72,7 @@ def main(args: argparse.Namespace):
 
     participant_list = participant_list.participant.to_list()
 
-    labkey_api: database.LabkeyAPI = database.LabkeyAPI.init_from_json(verbose=verbose)
+    labkey_api = database.LabkeyAPI.init_from_json(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
@@ -80,16 +80,16 @@ def main(args: argparse.Namespace):
     # [TODO]: check for already finished/segmented studies, using Participant
     participant_list = labkey_api.exclude_finished_studies(participant_list)
 
-    queried_study_cases: list[database.LabkeyRow] = labkey_api._select_rows(
+    queried_study_cases: list[StudyData] = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
             "ID",
+            "PARTICIPANT",
             "RODNE_CISLO",
             "STUDY_INSTANCE_UID",
-            "VYSKA_PAC.",
-            "PARTICIPANT",
             "PACS_CISLO",
+            "VYSKA_PAC.",
         ],  # [TODO]: possibly add CAS_VYSETRENI
         filter_dict={"PARTICIPANT": participant_list},
         sanitize_rows=True,

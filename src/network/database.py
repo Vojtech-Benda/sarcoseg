@@ -1,9 +1,11 @@
+from typing import Self
+
 import requests
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 
 from src import slogger
-from src.classes import LabkeyRow
+from src.classes import LabkeyRow, StudyData
 from src.utils import read_json
 
 logger = slogger.get_logger(__name__)
@@ -54,11 +56,11 @@ class LabkeyAPI(APIWrapper):
         self,
         schema_name: str,
         query_name: str,
-        columns: list[str] | str = None,
+        columns: list[str] | str | None = None,
         max_rows: int = -1,
-        filter_dict: dict[str, list[str]] = None,
+        filter_dict: dict[str, list[str]] | None = None,
         sanitize_rows: bool = False,
-    ) -> list[LabkeyRow] | None:
+    ) -> list[StudyData] | None:
         logger.info("labkey query:")
         logger.info(
             f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
@@ -93,8 +95,8 @@ class LabkeyAPI(APIWrapper):
             return self.sanitize_response_data(rows)
         return rows
 
-    def sanitize_response_data(self, rows: list[dict]):
-        return [LabkeyRow.from_labkey_dict(row) for row in rows]
+    def sanitize_response_data(self, rows: list[dict]) -> list[StudyData]:
+        return [StudyData.from_labkey_row(row) for row in rows]
 
     def _upload_data(
         self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
@@ -144,7 +146,7 @@ class LabkeyAPI(APIWrapper):
         return list(set(input_participants).symmetric_difference(finished_studies))
 
     @classmethod
-    def init_from_json(cls, verbose: bool = False):
+    def init_from_json(cls, verbose: bool = False) -> Self | None:
         """Initialize Labkey API with configuration values from .env file.
 
         Args:
