@@ -34,8 +34,8 @@ class PacsAPI:
         os.makedirs(download_directory, exist_ok=True)
 
         args = [
-            # sys.executable,
-            # movescu.__file__,
+            sys.executable,
+            movescu.__file__,
             self.ip,
             str(self.port),
             "-aec",
@@ -56,9 +56,9 @@ class PacsAPI:
         ]
 
         logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
-        # ret = subprocess.run(args, capture_output=True, text=True)
         try:
-            movescu.main(args)
+            ret = subprocess.run(args, capture_output=True, text=True)
+            # movescu.main(args)
         except SystemExit:
             logger.info("movescu finished and tried to exit; continuing execution")
 
