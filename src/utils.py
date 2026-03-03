@@ -7,6 +7,7 @@ from time import perf_counter
 import nibabel as nib
 import numpy as np
 import pandas as pd
+import SimpleITK as sitk
 import skimage as sk
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
@@ -15,6 +16,7 @@ from pydicom import dcmread
 from src import slogger
 from src.classes import (
     ImageData,
+    ImageData_,
     MetricsData,
     StudyData,
 )
@@ -36,6 +38,13 @@ DEFAULT_TISSUE_CLASSES: dict[str, int] = {
 }
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
+
+TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
+    "muscle": (-29, 150),
+    "imat": (-190, -30),
+    "vat": (-205, -51),
+}
+
 
 logger = slogger.get_logger(__name__)
 
@@ -105,58 +114,35 @@ def get_vertebrae_body_centroids(
 
 
 def postprocess_tissue_masks(
-    mask_data: ImageData,
-    volume_data: ImageData,
+    mask_data: ImageData_,
+    volume_data: ImageData_,
 ):
-    """
-    store tissue labels in separate z-axis
-    tissue      | label     | z-axis index
-    muscle      | 1         | 0
-    sat         | 2         | 1
-    vat         | 3         | 2
-    imat        | 4         | 3
-    """
     start = perf_counter()
-    mask_arr = mask_data.image.get_fdata().astype(np.uint8)
-    volume_arr = volume_data.image.get_fdata()
 
-    processed_mask = np.zeros(
-        (*mask_arr.shape, len(DEFAULT_TISSUE_CLASSES)), dtype=bool
+    imat_hu_range = TISSUE_HU_RANGES["imat"]
+    vat_hu_range = TISSUE_HU_RANGES["vat"]
+
+    # copy the mask for in place modification without affecting segmentation output
+    mask = sitk.Image(mask_data.image)
+
+    imat_thresh = (imat_hu_range[0] <= volume_data.image <= imat_hu_range[1]) & (
+        mask == DEFAULT_TISSUE_CLASSES["muscle"]
     )
-    for i, label in enumerate(DEFAULT_TISSUE_CLASSES.values()):
-        # for SAT (label == 1) use 200, for other tissues use 20
-        min_hole_size = 200 if label == 1 else 20
+    imat_thresh = sitk.BinaryOpeningByReconstruction(imat_thresh)
+    mask[imat_thresh] = DEFAULT_TISSUE_CLASSES["imat"]
 
-        processed_mask[..., i] = sk.morphology.remove_small_holes(
-            mask_arr == label, min_hole_size
-        )
-
-        if label == 4:
-            # get muscle tissue pixels in HU
-            muscle_hu = volume_arr * processed_mask[..., 3]
-
-            imat_hu = np.logical_and(muscle_hu <= -30, muscle_hu >= -190)
-
-            imat_hu_filt = sk.morphology.remove_small_objects(imat_hu, 10)
-            processed_mask[imat_hu_filt, 2] = 1
-            processed_mask[imat_hu_filt, 3] = 0
-
-    # squeeze processed labels of shape H x W x D x L -> H x W x D
-    out_nifti = np.zeros(processed_mask.shape[:-1], dtype=np.uint8)
-
-    for i, label in enumerate(DEFAULT_TISSUE_CLASSES.values()):
-        out_nifti[processed_mask[..., i]] = label
-    out_nifti = nib.as_closest_canonical(
-        nib.Nifti1Image(out_nifti, mask_data.image.affine)
+    non_vat_thresh = (volume_data.image > vat_hu_range[1]) * (
+        mask == DEFAULT_TISSUE_CLASSES["vat"]
     )
+    non_vat_thresh = sitk.BinaryOpeningByReconstruction(non_vat_thresh)
+    mask[non_vat_thresh] = 0
+
     processed_mask_path = mask_data.path.parent.joinpath("tissue_mask_pp.nii.gz")
-    nib.save(out_nifti, processed_mask_path)  # overwrite segmented image
+    sitk.WriteImage(mask, processed_mask_path)
 
     duration = perf_counter() - start
     logger.info(f"tissue postprocessing finished in {duration:.2f} second")
-    return ImageData(
-        image=out_nifti, spacing=mask_data.spacing, path=processed_mask_path
-    ), duration
+    return ImageData_(image=mask, path=processed_mask_path), duration
 
 
 def compute_metrics(
@@ -256,6 +242,17 @@ def read_volume(path: Path | str):
     volume = nib.as_closest_canonical(nib.load(path))
     spacing = volume.header.get_zooms()
     return ImageData(image=volume, spacing=spacing, path=Path(path))
+
+
+def read_volume_orient(path: Path | str, orientation: str | None) -> ImageData:
+    image = sitk.ReadImage(path)
+    if orientation:
+        image = sitk.DICOMOrient(image, orientation)
+    return ImageData(
+        image,
+        Path(path),
+        np.array(image.GetSpacing()),
+    )
 
 
 def remove_empty_segmentation_dir(dirpath: str | Path):

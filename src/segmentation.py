@@ -6,12 +6,10 @@ import nibabel as nib
 from nibabel import Nifti1Image
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
-from src import utils
-from src.utils import DEFAULT_VERTEBRA_CLASSES
-from src import visualization
+from src import utils, visualization
+from src.classes import Centroids, ImageData, SegmentationResult, StudyData
 from src.slogger import get_logger
-from src.classes import ImageData, SegmentationResult, StudyData, Centroids
-
+from src.utils import DEFAULT_VERTEBRA_CLASSES
 
 logger = get_logger(__name__)
 
@@ -199,7 +197,7 @@ def segment_tissues(
     duration = perf_counter() - start
     logger.info(f"tissue segmentation finished in {duration}")
 
-    tissue_mask: ImageData = utils.read_volume(output_filepath)
+    tissue_mask: ImageData = utils.read_volume_orient(output_filepath, "LPS")
     return tissue_mask, duration
 
 

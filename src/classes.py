@@ -5,9 +5,9 @@ from typing import Any, Self
 
 from nibabel.nifti1 import Nifti1Image
 from numpy.typing import NDArray
+from SimpleITK import Image
 
 from src import slogger
-
 from src.io import read_json
 
 logger = slogger.get_logger(__name__)
@@ -130,9 +130,15 @@ class StudyData:
 
 @dataclass
 class ImageData:
-    image: Nifti1Image | NDArray
+    image: Nifti1Image | NDArray | Image
     path: Path
     spacing: NDArray | None = None
+
+
+@dataclass
+class ImageData_:
+    image: Image
+    path: Path
 
 
 @dataclass
