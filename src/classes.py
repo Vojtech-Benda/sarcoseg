@@ -3,8 +3,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
-from nibabel.nifti1 import Nifti1Image
-from numpy.typing import NDArray
 from SimpleITK import Image
 
 from src import slogger
@@ -118,7 +116,7 @@ class StudyData:
             f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}\nfields excluded: {exclude}"
         )
 
-    def _to_list_of_dicts(self):
+    def _to_list_of_dicts(self) -> list[dict[str, Any]]:
         _study = {
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
@@ -130,13 +128,6 @@ class StudyData:
 
 @dataclass
 class ImageData:
-    image: Nifti1Image | NDArray | Image
-    path: Path
-    spacing: NDArray | None = None
-
-
-@dataclass
-class ImageData_:
     image: Image
     path: Path
 

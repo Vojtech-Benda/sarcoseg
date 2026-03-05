@@ -12,14 +12,6 @@ from src.classes import SeriesData, StudyData
 logger = slogger.get_logger(__name__)
 
 
-class DicomStudyPreprocessor:
-    def __init__(self):
-        pass
-
-    def _preprocess_study(self):
-        pass
-
-
 SERIES_DESC_PATTERN = re.compile(
     r"|".join(
         ("protocol", "topogram", "scout", "patient", "dose", "report", "monitor")
@@ -45,11 +37,6 @@ def preprocess_dicom_study(
     if not dicom_files:
         logger.error(f"no DICOM files found in `{input_dir}`")
         return None
-
-    # TODO maybe add verify_dicom_study(), remove if no
-    # if not verify_dicom_study(study_case.study_inst_uid, dicom_files[0]):
-    #     logger.error("requested study ")
-    #     return
 
     logger.info(
         f"preprocessing DICOM files for participant {study_case.participant}, study {study_case.study_inst_uid}"

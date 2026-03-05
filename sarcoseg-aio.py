@@ -141,7 +141,6 @@ def main(args: argparse.Namespace):
             output_study_dir,
             output_study_dir,
             study_case=study_case,
-            save_mask_overlays=True,
         )
 
         print(segmentation_result)

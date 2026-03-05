@@ -2,8 +2,7 @@ import subprocess
 from pathlib import Path
 from time import perf_counter
 
-import nibabel as nib
-from nibabel import Nifti1Image
+import SimpleITK as sitk
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
 from src import utils, visualization
@@ -24,8 +23,6 @@ def segment_ct_study(
     input_dir: str | Path,
     output_dir: str | Path,
     study_case: StudyData | None = None,
-    slices_num: int = 0,
-    save_mask_overlays: bool = False,
 ) -> SegmentationResult:
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
@@ -44,8 +41,6 @@ def segment_ct_study(
     seg_result = SegmentationResult._from_study_case(study_case)
 
     for series_filepath in series_nifti_filepaths:
-        input_volume_data: ImageData = utils.read_volume(series_filepath)
-
         series_output_dir = series_filepath.parent
         series_inst_uid = series_output_dir.parts[-1]
 
@@ -57,24 +52,22 @@ def segment_ct_study(
             series_filepath, series_output_dir
         )
 
+        input_volume_data: ImageData = utils.read_volume(series_filepath, "LPI")
         tissue_volume_data, centroids, extraction_duration = extract_slices(
             input_volume_data.image,
             spine_mask_data.image,
             series_output_dir,
-            slices_num,
         )
 
         tissue_mask_data, tissue_duration = segment_tissues(
             tissue_volume_data.path, series_output_dir
         )
 
-        # TODO check this and verify if it should be used
         processed_data, postproc_duration = utils.postprocess_tissue_masks(
             tissue_mask_data,
             tissue_volume_data,
         )
 
-        # TODO maybe replace skimage with simpleitk?
         metrics = utils.compute_metrics(
             processed_data,
             tissue_volume_data,
@@ -90,21 +83,21 @@ def segment_ct_study(
 
         seg_result.metrics_dict[series_inst_uid] = metrics
 
-        if save_mask_overlays:
-            case_images_dir = series_output_dir.joinpath("images")
-            case_images_dir.mkdir(exist_ok=True)
-            visualization.overlay_spine_mask(
-                input_volume_data.image,
-                spine_mask_data.image,
-                centroids.vertebre_centroid,
-                output_dir=case_images_dir,
-            )
+        case_images_dir = series_output_dir.joinpath("images")
+        case_images_dir.mkdir(exist_ok=True)
+        visualization.overlay_spine_mask(
+            input_volume_data.image,
+            spine_mask_data.image,
+            centroids.vertebre_centroid,
+            output_dir=case_images_dir,
+        )
 
-            visualization.overlay_tissue_mask(
-                tissue_volume_data.image,
-                processed_data.image,
-                output_dir=case_images_dir,
-            )
+        visualization.overlay_tissue_mask(
+            tissue_volume_data.image,
+            processed_data.image,
+            output_dir=case_images_dir,
+        )
+        logger.info("saved mask overlays")
 
     seg_result._write_to_json(output_dir)
     return seg_result
@@ -168,9 +161,7 @@ def segment_spine(
     duration = perf_counter() - start
     logger.info(f"spine segmentation finised in {duration:.2f} seconds")
 
-    spine_mask = nib.as_closest_canonical(nib.load(spine_mask_path))
-    spacing = spine_mask.header.get_zooms()
-    return ImageData(image=spine_mask, path=spine_mask_path, spacing=spacing), duration
+    return utils.read_volume(spine_mask_path, "LPI"), duration
 
 
 def segment_tissues(
@@ -197,13 +188,12 @@ def segment_tissues(
     duration = perf_counter() - start
     logger.info(f"tissue segmentation finished in {duration}")
 
-    tissue_mask: ImageData = utils.read_volume_orient(output_filepath, "LPS")
-    return tissue_mask, duration
+    return utils.read_volume(output_filepath, "LPI"), duration
 
 
 def extract_slices(
-    ct_volume: Nifti1Image | Path | str,
-    spine_mask: Nifti1Image | Path | str,
+    ct_volume: sitk.Image | Path | str,
+    spine_mask: sitk.Image | Path | str,
     output_dir: Path | str,
     slices_num: int = 0,
 ) -> tuple[ImageData, Centroids, float]:
@@ -221,75 +211,43 @@ def extract_slices(
         FileNotFoundError: If segmented spine mask is not found.
 
     Returns:
-
+        tuple (ImageData, float): Tuple of segmented spine mask and segmentation duration.
+        - **tissue_slice** (ImageData): Spine segmentation mask.
+        - **centroids** (Centroids): Indexes of whole L3 vertebrae centroid and L3 vertebrae body centroid.
+        - **duration** (float): Duration of segmentation.
     """
-    if not isinstance(spine_mask, Nifti1Image):
-        if Path(spine_mask).exists():
-            spine_mask = nib.as_closest_canonical(nib.load(spine_mask))
-        else:
-            raise FileNotFoundError(spine_mask)
+    if not isinstance(spine_mask, sitk.Image):
+        raise TypeError(
+            f"spine_mask should be of type sitk.Image, not `{type(spine_mask)}`"
+        )
 
-    if not isinstance(ct_volume, Nifti1Image):
-        if Path(ct_volume).exists():
-            ct_volume = nib.as_closest_canonical(nib.load(ct_volume))
-        else:
-            raise FileNotFoundError(ct_volume)
+    if not isinstance(ct_volume, sitk.Image):
+        raise TypeError(
+            f"ct_volume should be of type sitk.Image, not `{type(ct_volume)}`"
+        )
 
     start = perf_counter()
     body_centroid, vert_centroid = utils.get_vertebrae_body_centroids(
         spine_mask, DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"]
     )
 
-    # requires slices_num=2 at minimum
-    if slices_num >= 2:
-        slices_range = [
-            # extract slices in Z direction (superior-inferior)
-            body_centroid[-1] - (slices_num // 2),
-            body_centroid[-1] + (slices_num // 2),
-        ]
-    else:
-        slices_range = [body_centroid[-1], body_centroid[-1]]
-
-    slices_range[-1] += 1  # nibabel slicer requires range [..., i:i + 1]
-
-    if slices_range[0] < 0:
-        slices_range[0] = 0
-        logger.info(
-            f"lower index {slices_range[0]} is outside lower extent for Z dimension, setting to 0"
-        )
-
-    z_size = ct_volume.shape[-1]
-    if slices_range[1] > z_size:
-        slices_range[1] = z_size
-        slices_range[0] -= 1
-        logger.info(
-            f"upper index {slices_range[1]} is outside upper extent for Z dimension {z_size}, setting to {z_size}"
-        )
-
-    logger.info(
-        f"extracting {slices_range[1] - slices_range[0]} slices in range {slices_range}"
-    )
-
-    sliced_volume = ct_volume.slicer[..., slices_range[0] : slices_range[1]]
-    sliced_volume = nib.as_closest_canonical(sliced_volume)
+    # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
+    tissue_slice = ct_volume[..., body_centroid[1] : body_centroid[1] + 1]
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
         logger.info(f"file `{output_filepath}` exists, overwriting")
 
-    try:
-        nib.save(sliced_volume, output_filepath)
-    except RuntimeError as err:
-        logger.error(err)
+    sitk.WriteImage(tissue_slice, output_filepath)
 
     duration = perf_counter() - start
     logger.info(f"slice extraction finished in {duration} seconds")
 
     return (
-        ImageData(image=sliced_volume, path=output_filepath),
+        ImageData(image=tissue_slice, path=output_filepath),
         Centroids(
-            vertebre_centroid=vert_centroid.tolist(),
-            body_centroid=body_centroid.tolist(),
+            vertebre_centroid=vert_centroid,
+            body_centroid=body_centroid,
         ),
         duration,
     )

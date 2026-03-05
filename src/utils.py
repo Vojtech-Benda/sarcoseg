@@ -4,19 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
-import nibabel as nib
-import numpy as np
 import pandas as pd
 import SimpleITK as sitk
-import skimage as sk
-from nibabel.nifti1 import Nifti1Image
-from numpy.typing import NDArray
-from pydicom import dcmread
 
 from src import slogger
 from src.classes import (
     ImageData,
-    ImageData_,
     MetricsData,
     StudyData,
 )
@@ -31,10 +24,10 @@ DEFAULT_VERTEBRA_CLASSES: dict[str, int] = {
 }
 
 DEFAULT_TISSUE_CLASSES: dict[str, int] = {
+    "muscle": 1,
     "sat": 2,
     "vat": 3,
     "imat": 4,
-    "muscle": 1,
 }
 
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
@@ -50,79 +43,60 @@ logger = slogger.get_logger(__name__)
 
 
 def get_vertebrae_body_centroids(
-    mask: Nifti1Image, vert_labels: int
-) -> tuple[NDArray, NDArray]:
+    mask: sitk.Image, vert_labels: int
+) -> tuple[list[int], list[int]]:
     """
     Get vertebrae's body centroid coordinates in pixel space.
 
     Args:
-        mask (nib.nifti1.Nifti1Image): spine prediction mask
+        mask (sitk.Image): spine prediction mask
         vert_labels (int): vertebrae mask labels
 
     Returns:
-        vert_body_centroid (NDArray):
+        vert_body_centroid (list[int]):
             Vertebrae body centroid in voxel space.
 
-        vert_centroid (NDArray):
+        vert_centroid (list[int]):
             Vertebrae centroid in voxel space.
     """
 
-    mask_arr: NDArray = mask.get_fdata().astype(np.uint8)
+    label_filt = sitk.LabelShapeStatisticsImageFilter()
+    label_filt.Execute(mask)
 
-    # get sagittal slice at L3's center
-    vert_label_centroid: NDArray = np.rint(
-        sk.measure.centroid(mask_arr == vert_labels)
-    ).astype(np.uint16)
-    sagittal_slice_arr: NDArray = mask_arr[vert_label_centroid[0], ...]
-    sagittal_l3 = np.where(sagittal_slice_arr == vert_labels, vert_labels, 0)
-
-    # relabel L3 parts
-    vert_components: NDArray = sk.measure.label(sagittal_l3)
-
-    # get 2 largest components
-    compoments_pixel_num: dict[int, int] = {
-        prop.label: prop.num_pixels for prop in sk.measure.regionprops(vert_components)
-    }
-    largest_components_labels = sorted(
-        compoments_pixel_num, key=compoments_pixel_num.get, reverse=True
+    # get the whole L3 vertebrae centroid
+    # centroid index = [sagittal, coronal, axial]
+    vert_centroid = mask.TransformPhysicalPointToIndex(
+        label_filt.GetCentroid(vert_labels)
     )
 
-    # get centers of largest components
-    comp_centroids = np.array(
-        [
-            sk.measure.centroid(vert_components == label)
-            for label in largest_components_labels
-        ]
+    # relabel the whole L3 vertebrae in sagittal view
+    # label object size sorted descending order
+    relabeled_vert_parts = sitk.RelabelComponent(
+        sitk.ConnectedComponent(
+            mask[vert_centroid[0], ...] == DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"]
+        ),
+        sortByObjectSize=True,
     )
-    comp_centroids = np.rint(comp_centroids).astype(np.uint16)
 
-    """
-    get the centroid in front of whole vertebrae mask centroid
+    # label of vertebrae body is 1 due to descending sorting by size
+    label_filt.Execute(relabeled_vert_parts)
+    body_centroid = relabeled_vert_parts.TransformPhysicalPointToIndex(
+        label_filt.GetCentroid(1)
+    )
 
-    - axis directions/coordinates:
-    vertebrae mask centroid: (X, Y, Z) -> (R, A, S)
-    centroids: (Y, Z) -> (A, S), centroids numpy shapes (n, 2), where n is number of centroids
-
-    - compare centroid coordinates in anterior (A) direction which increases towards anterior
-    - comparison is done in pixel/voxel space
-    """
-    vert_body_centroid = comp_centroids[
-        np.argmax(comp_centroids[:, 0] > vert_label_centroid[1])
-    ]
-
-    return vert_body_centroid, vert_label_centroid
+    return body_centroid, vert_centroid
 
 
 def postprocess_tissue_masks(
-    mask_data: ImageData_,
-    volume_data: ImageData_,
-):
+    mask_data: ImageData,
+    volume_data: ImageData,
+) -> tuple[ImageData, int | float]:
     start = perf_counter()
 
     imat_hu_range = TISSUE_HU_RANGES["imat"]
     vat_hu_range = TISSUE_HU_RANGES["vat"]
 
-    # copy the mask for in place modification without affecting segmentation output
+    # copy the mask for in place modification without affecting original mask
     mask = sitk.Image(mask_data.image)
 
     imat_thresh = (imat_hu_range[0] <= volume_data.image <= imat_hu_range[1]) & (
@@ -142,7 +116,7 @@ def postprocess_tissue_masks(
 
     duration = perf_counter() - start
     logger.info(f"tissue postprocessing finished in {duration:.2f} second")
-    return ImageData_(image=mask, path=processed_mask_path), duration
+    return ImageData(image=mask, path=processed_mask_path), duration
 
 
 def compute_metrics(
@@ -151,7 +125,7 @@ def compute_metrics(
     patient_height: float | None = None,
 ) -> MetricsData:
     """Compute area and mean Hounsfield Unit for segmented tissue masks.
-    Also compute skeletal muscle index (SMI) if `patient_height` is given.
+    Also compute skeletal muscle index (SMI) if `patient_height` is given. Patient height needs to be in cm.
 
     Units of computed metrics:
         - area: cm^2
@@ -164,55 +138,35 @@ def compute_metrics(
         patient_height (float | None, optional): Patient's height. Defaults to None.
 
     Returns:
-        metrics (MetricsData): Computed metrics.
+        metrics (MetricsData): Computed metrics with cross-sectional area, mean HU and skeletal muscle index.
     """
-    if tissue_mask_data.spacing:
-        spacing = tissue_mask_data.spacing
-    elif tissue_volume_data.spacing:
-        spacing = tissue_volume_data.spacing
+    mask_image = tissue_mask_data.image
+    tissue_image = tissue_volume_data.image
 
-    # if None use 1mm spacing in all directions
-    if spacing is None:
-        spacing = (1.0, 1.0, 1.0)
+    if mask_image.GetSize()[-1] == 1:
+        # 3D array to 2D array only for metrics
+        mask_image = mask_image[..., 0]
+        tissue_image = tissue_image[..., 0]
 
-    mask_arr = tissue_mask_data.image.get_fdata()
+    stats_filt = sitk.LabelIntensityStatisticsImageFilter()
+    stats_filt.Execute(mask_image, tissue_image)
 
-    depth = mask_arr.shape[-1]  # get image size only
-    if depth == 1:
-        pixel_size = np.prod(spacing[:2]) / 100.0  # pixel size is in cm^2
-    elif depth > 1:
-        pixel_size = np.prod(spacing) / 10000.0  # pixel size is in cm^3
-
-    tissue_arr = tissue_volume_data.image.get_fdata()
-
+    # divide by 100 to convert from mm2 to cm2
     area = {
-        tissue: np.count_nonzero(mask_arr == label) * pixel_size
+        tissue: stats_filt.GetPhysicalSize(label) / 100.0
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
     mean_hu = {
-        tissue: np.mean(tissue_arr[mask_arr == label])
+        tissue: stats_filt.GetMean(label)
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
     smi = None
     if patient_height:
-        # skeletal muscle index (smi) (cm^2 / m^2) = muscle area (cm^2) / patient height (m^2)
-        # patient height is in cm^2
+        # skeletal muscle index (smi) = muscle area / (patient height ^ 2)
+        # units: cm2 / m2 = (cm2) / (cm / 100) ^ 2
         smi = area["muscle"] / ((patient_height / 100.0) ** 2)
     return MetricsData(area=area, mean_hu=mean_hu, skelet_muscle_index=smi)
-
-
-# TODO: maybe add verify_dicom_study()?? possibly no
-def verify_dicom_study(study_inst_uid: str, dicom_filepath: str | Path):
-    ds = dcmread(
-        dicom_filepath,
-        stop_before_pixels=True,
-        specific_tags=["PatientID", "StudyInstanceUID"],
-    )
-    logger.info(
-        f"verifying study instance uids:\nLabkey={study_inst_uid}\nDICOM={ds.StudyInstanceUID}"
-    )
-    return study_inst_uid == ds.StudyInstanceUID
 
 
 def read_patient_list(
@@ -238,21 +192,11 @@ def read_patient_list(
     return df
 
 
-def read_volume(path: Path | str):
-    volume = nib.as_closest_canonical(nib.load(path))
-    spacing = volume.header.get_zooms()
-    return ImageData(image=volume, spacing=spacing, path=Path(path))
-
-
-def read_volume_orient(path: Path | str, orientation: str | None) -> ImageData:
+def read_volume(path: Path | str, orientation: str | None) -> ImageData:
     image = sitk.ReadImage(path)
     if orientation:
         image = sitk.DICOMOrient(image, orientation)
-    return ImageData(
-        image,
-        Path(path),
-        np.array(image.GetSpacing()),
-    )
+    return ImageData(image, Path(path))
 
 
 def remove_empty_segmentation_dir(dirpath: str | Path):

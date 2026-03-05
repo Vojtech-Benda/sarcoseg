@@ -2,9 +2,6 @@ import argparse
 import json
 from pathlib import Path
 
-# REMOVE in future for nnunetv2 branch
-# from zipfile import ZipFile
-# import huggingface_hub as hf
 from totalsegmentator.python_api import download_pretrained_weights
 
 from src.slogger import get_logger

@@ -1,130 +1,74 @@
 from pathlib import Path
+import SimpleITK as sitk
 
-import imageio
-import numpy as np
-from nibabel.nifti1 import Nifti1Image
-from numpy.typing import NDArray
-from skimage.color import label2rgb
 
-SPINE_COLORS = np.array(
-    [
-        [0.737, 0.741, 0.133],  # tab:olive
-        [0.173, 0.627, 0.173],  # tab:green
-        [0.580, 0.403, 0.741],  # tab:purple
-        [0.839, 0.153, 0.157],  # tab:red
-        [0.122, 0.467, 0.706],  # tab:blue
-        [1.000, 0.498, 0.055],  # tab:orange
-    ]
-)
+SPINE_COLORS = [
+    [188, 189, 34],
+    [44, 160, 44],
+    [148, 103, 189],
+    [214, 39, 40],
+    [31, 119, 180],
+    [255, 127, 14],
+]
 
-TISSUE_COLORS = ["khaki", "lightgreen", "dodgerblue", "lightcoral"]
-TISSUE_COLORS_2 = np.array(
-    [
-        [0.965, 0.745, 0.506],
-        [0.549, 0.773, 0.520],
-        [0.604, 0.530, 0.878],
-        [1.000, 0.533, 0.522],
-    ]
-)
 
-RAS_TO_LPI = np.array([[0.0, -1.0], [1.0, -1.0], [2.0, -1.0]])  # from RAS to LPI
+TISSUE_COLORS_SITK = [
+    [51, 153, 255],  # imat
+    [255, 80, 80],  # muscle
+    [0, 208, 7],  # sat
+    [255, 255, 102],  # vat
+]
 
 
 def overlay_spine_mask(
-    ct_volume: Nifti1Image,
-    spine_mask: Nifti1Image,
-    vert_body_centroid: NDArray | list,
+    ct_volume: sitk.Image,
+    spine_mask: sitk.Image,
+    vert_centroid: list,
     output_dir: Path,
 ):
-    coronal = [
-        np.squeeze(
-            vol.slicer[:, vert_body_centroid[1] : vert_body_centroid[1] + 1, :]
-            .as_reoriented(RAS_TO_LPI)
-            .get_fdata(),
-            axis=1,
-        ).T
-        for vol in (ct_volume, spine_mask)
+    colormap = [channel for color in SPINE_COLORS for channel in color]
+
+    coronal_views = [
+        sitk.Cast(
+            sitk.IntensityWindowing(ct_volume[vert_centroid[0], ...], -100, 900),
+            sitk.sitkUInt8,
+        ),
+        spine_mask[vert_centroid[0], ...],
     ]
-    sagittal = [
-        np.squeeze(
-            vol.slicer[vert_body_centroid[0] : vert_body_centroid[0] + 1, :, :]
-            .as_reoriented(RAS_TO_LPI)
-            .get_fdata(),
-            axis=0,
-        ).T
-        for vol in (ct_volume, spine_mask)
+    sagittal_views = [
+        sitk.Cast(
+            sitk.IntensityWindowing(ct_volume[:, vert_centroid[1], :], -100, 900),
+            sitk.sitkUInt8,
+        ),
+        spine_mask[:, vert_centroid[1], :],
     ]
 
-    coronal[0] = normalize_hu(apply_ct_window(coronal[0], width=1000, level=400))
-    sagittal[0] = normalize_hu(apply_ct_window(sagittal[0], width=1000, level=400))
+    coronal = sitk.LabelOverlay(
+        coronal_views[0],
+        coronal_views[1],
+        colormap=colormap,
+    )
+    sagittal = sitk.LabelOverlay(
+        sagittal_views[0],
+        sagittal_views[1],
+        colormap=colormap,
+    )
 
-    filenames = ("spine_coronal_overlay.png", "spine_sagittal_overlay.png")
-    for (image, mask), filename in zip([coronal, sagittal], filenames):
-        try:
-            overlay = (
-                label2rgb(
-                    label=mask,
-                    image=image,
-                    colors=SPINE_COLORS,
-                    alpha=0.5,
-                    bg_color=None,
-                    bg_label=0,
-                )
-                * 255
-            ).astype(np.uint8)
-
-            fullpath = output_dir.joinpath(filename)
-            imageio.imsave(fullpath, overlay)
-
-        except RuntimeError as err:
-            print(err)
+    sitk.WriteImage(coronal, output_dir.joinpath("spine_coronal_overlay.png"))
+    sitk.WriteImage(sagittal, output_dir.joinpath("spine_sagittal_overlay.png"))
 
 
 def overlay_tissue_mask(
-    tissue_volume: Nifti1Image,
-    tissue_mask: Nifti1Image,
+    tissue_volume: sitk.Image,
+    tissue_mask: sitk.Image,
     output_dir: Path,
 ):
-    # reorient slices into LPI direction for 2D plane
-    tissue_volume = tissue_volume.as_reoriented(RAS_TO_LPI)
-    tissue_mask = tissue_mask.as_reoriented(RAS_TO_LPI)
+    colormap = [channel for color in TISSUE_COLORS_SITK for channel in color]
+    tissue_overlay = sitk.LabelOverlay(
+        sitk.Cast(sitk.IntensityWindowing(tissue_volume, -135, 215), sitk.sitkUInt8),
+        tissue_mask,
+        opacity=0.75,
+        colormap=colormap,
+    )
 
-    # tranpose array for the correct axis directions on 2D plane - right hand on left image side, anterior facing upwards
-    image_array, mask_array = [
-        np.squeeze(img.get_fdata(), axis=-1).T for img in (tissue_volume, tissue_mask)
-    ]
-
-    image_array = normalize_hu(apply_ct_window(image_array, width=600, level=150))
-
-    try:
-        overlay = (
-            label2rgb(
-                label=mask_array,
-                image=image_array,
-                colors=TISSUE_COLORS,
-                alpha=0.8,
-                bg_color=None,
-                bg_label=0,
-            )
-            * 255
-        ).astype(np.uint8)
-
-        # filename = phase + "_" + "tissue_overlay.png"
-        output_filepath = output_dir.joinpath("tissue_overlay.png")
-
-        imageio.imsave(output_filepath, overlay)
-    except RuntimeError as err:
-        print(err)
-
-
-def save_preview_image():
-    pass
-
-
-def apply_ct_window(array, width=400, level=50):
-    window_range = (level - width // 2, level + width // 2)
-    return np.clip(array, window_range[0], window_range[1])
-
-
-def normalize_hu(array):
-    return (array - array.min()) / (array.max() - array.min())
+    sitk.WriteImage(tissue_overlay, output_dir.joinpath("tissue_overlay.png"))
