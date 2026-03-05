@@ -18,7 +18,7 @@ tests/download
 labkey_filter.py
 
 # ide dirs
-.vscode/*
+.vscode/
 .idea/*
 .zed/
 

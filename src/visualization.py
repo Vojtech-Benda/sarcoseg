@@ -1,6 +1,6 @@
 from pathlib import Path
-import SimpleITK as sitk
 
+import SimpleITK as sitk
 
 SPINE_COLORS = [
     [188, 189, 34],
@@ -12,11 +12,11 @@ SPINE_COLORS = [
 ]
 
 
-TISSUE_COLORS_SITK = [
-    [51, 153, 255],  # imat
+TISSUE_COLORS = [
+    [111, 184, 210],  # imat
     [255, 80, 80],  # muscle
-    [0, 208, 7],  # sat
-    [255, 255, 102],  # vat
+    [101, 197, 72],  # sat
+    [241, 236, 93],  # vat
 ]
 
 
