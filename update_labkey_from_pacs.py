@@ -1,11 +1,10 @@
 import sys
 
 import pandas as pd
-from labkey.query import QueryFilter
 from pydicom import Dataset
-
 from pynetdicom import AE
 from pynetdicom.sop_class import _QR_CLASSES
+from tqdm import tqdm
 
 from src.network import database, pacs
 
@@ -30,7 +29,7 @@ response = labkey_api.query.select_rows(
     schema_name="lists",
     query_name="RDG-CT-Sarko-All",
     columns=",".join(columns),
-    filter_array=[QueryFilter("pacs_cislo", "", QueryFilter.Types.IS_BLANK)],
+    max_rows=-1,
 )
 
 if not response.get("rows", None):
@@ -43,6 +42,9 @@ raw_rows = [
 ]
 print(f"returned rows {len(raw_rows)}")
 
+if not raw_rows:
+    sys.exit(-1)
+
 pacs_api = pacs.PacsAPI.init_from_json()
 
 ae = AE(ae_title=pacs_api.aet)
@@ -53,7 +55,7 @@ if not assoc.is_established:
     print("can't establish PACS association")
     sys.exit(-1)
 
-for row in raw_rows:
+for row in tqdm(raw_rows):
     ds = Dataset()
     ds.QueryRetrieveLevel = "STUDY"
     ds.PatientID = row["RODNE_CISLO"]
