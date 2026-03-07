@@ -78,7 +78,6 @@ def main(args: argparse.Namespace):
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
-            "ID",
             "PARTICIPANT",
             "RODNE_CISLO",
             "STUDY_INSTANCE_UID",

@@ -48,7 +48,7 @@ class SeriesData:
 class StudyData:
     participant: str
     study_inst_uid: str
-    labkey_row_id: str | None = field(default=None, compare=False, repr=False)
+    # id: str | None = field(default=None, compare=False, repr=False)
     patient_id: str | None = field(default=None, repr=False, compare=False)
     study_date: str | None = field(default=None, repr=False, compare=False)
     patient_height: float | int | None = field(default=None, repr=False, compare=False)
@@ -59,7 +59,7 @@ class StudyData:
         return cls(
             participant=row.get("PARTICIPANT"),
             study_inst_uid=row.get("STUDY_INSTANCE_UID"),
-            labkey_row_id=row.get("ID"),
+            # id=row.get("ID"),
             patient_id=row.get("RODNE_CISLO"),
             patient_height=row.get("VYSKA_PAC."),
         )
@@ -120,8 +120,8 @@ class StudyData:
         _study = {
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
-            "study_date": self.study_date,
-            "labkey_row_id": self.labkey_row_id,
+            # "study_date": self.study_date,
+            # "id": self.id,
         }
         return [_study | series._to_dict() for series in self.series.values()]
 
@@ -185,7 +185,7 @@ class MetricsData:
 class SegmentationResult:
     participant: str
     study_inst_uid: str
-    labkey_row_id: str | None = None
+    # id: str | None = None
     patient_height: float | None = None
 
     metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
@@ -195,7 +195,7 @@ class SegmentationResult:
         return cls(
             participant=study_data.participant,
             study_inst_uid=study_data.study_inst_uid,
-            labkey_row_id=study_data.labkey_row_id,
+            # id=study_data.id,
             patient_height=study_data.patient_height,
         )
 
@@ -233,7 +233,7 @@ class SegmentationResult:
             participant=data.get("participant"),
             study_inst_uid=data.get("study_inst_uid"),
             patient_height=data.get("patient_height"),
-            labkey_row_id=data.get("labkey_row_id"),
+            # id=data.get("id"),
             metrics_dict={
                 uid: MetricsData._from_dict(metric)
                 for uid, metric in data.get("metrics_dict").items()
@@ -243,7 +243,7 @@ class SegmentationResult:
     def _to_list_of_dicts(self) -> list[dict[str, Any]]:
         _base_dict = {
             "participant": self.participant,
-            "labkey_row_id": self.labkey_row_id,
+            # "id": self.id,
             "patient_height": self.patient_height,
             "study_inst_uid": self.study_inst_uid,
         }
