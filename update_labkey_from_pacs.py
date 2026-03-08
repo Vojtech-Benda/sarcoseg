@@ -31,7 +31,6 @@ response = labkey_api.query.select_rows(
     schema_name="lists",
     query_name="RDG-CT-Sarko-All",
     columns=",".join(columns),
-    filter_array=[QueryFilter("pacs_cislo", "", QueryFilter.Types.IS_BLANK)],
 )
 
 if not response.get("rows", None):
