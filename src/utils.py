@@ -59,6 +59,7 @@ def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
 
     # check if L3 has been segmented!!
     if l3_label not in label_filt.GetLabels():
+        logger.warning("no L3 mask label found")
         return Centroids()
 
     # get the whole L3 vertebrae centroid
