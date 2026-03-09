@@ -8,11 +8,7 @@ import pandas as pd
 import SimpleITK as sitk
 
 from src import slogger
-from src.classes import (
-    ImageData,
-    MetricsData,
-    StudyData,
-)
+from src.classes import Centroids, ImageData, MetricsData, StudyData
 
 DEFAULT_VERTEBRA_CLASSES: dict[str, int] = {
     "vertebrae_L1": 31,
@@ -42,9 +38,7 @@ TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
 logger = slogger.get_logger(__name__)
 
 
-def get_vertebrae_body_centroids(
-    mask: sitk.Image, vert_labels: int
-) -> tuple[list[int], list[int]]:
+def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
     """
     Get vertebrae's body centroid coordinates in pixel space.
 
@@ -63,18 +57,19 @@ def get_vertebrae_body_centroids(
     label_filt = sitk.LabelShapeStatisticsImageFilter()
     label_filt.Execute(mask)
 
+    # check if L3 has been segmented!!
+    if l3_label not in label_filt.GetLabels():
+        logger.warning("no L3 mask label found")
+        return Centroids()
+
     # get the whole L3 vertebrae centroid
     # centroid index = [sagittal, coronal, axial]
-    vert_centroid = mask.TransformPhysicalPointToIndex(
-        label_filt.GetCentroid(vert_labels)
-    )
+    vert_centroid = mask.TransformPhysicalPointToIndex(label_filt.GetCentroid(l3_label))
 
     # relabel the whole L3 vertebrae in sagittal view
     # label object size sorted descending order
     relabeled_vert_parts = sitk.RelabelComponent(
-        sitk.ConnectedComponent(
-            mask[vert_centroid[0], ...] == DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"]
-        ),
+        sitk.ConnectedComponent(mask[vert_centroid[0], ...] == l3_label),
         sortByObjectSize=True,
     )
 
@@ -84,7 +79,7 @@ def get_vertebrae_body_centroids(
         label_filt.GetCentroid(1)
     )
 
-    return body_centroid, vert_centroid
+    return Centroids(vert_centroid, body_centroid)
 
 
 def postprocess_tissue_masks(

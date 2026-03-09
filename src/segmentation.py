@@ -52,12 +52,22 @@ def segment_ct_study(
             series_filepath, series_output_dir
         )
 
+        # TODO: check for existing L3 label 29 in spine_mask
+
         input_volume_data: ImageData = utils.read_volume(series_filepath, "LPI")
-        tissue_volume_data, centroids, extraction_duration = extract_slices(
+        slice_extraction_result = extract_slices(
             input_volume_data.image,
             spine_mask_data.image,
             series_output_dir,
         )
+
+        if not any(slice_extraction_result):
+            logger.warning(
+                f"CT series {series_inst_uid} of participant {seg_result.participant} has no L3 mask"
+            )
+            continue
+
+        tissue_volume_data, centroids, extraction_duration = slice_extraction_result
 
         tissue_mask_data, tissue_duration = segment_tissues(
             tissue_volume_data.path, series_output_dir
@@ -196,7 +206,7 @@ def extract_slices(
     spine_mask: sitk.Image | Path | str,
     output_dir: Path | str,
     slices_num: int = 0,
-) -> tuple[ImageData, Centroids, float]:
+) -> tuple[ImageData, Centroids, float] | tuple[None, ...]:
     """
     Extract axial slices from input CT volume at vertebrae body's centroid.
 
@@ -227,12 +237,18 @@ def extract_slices(
         )
 
     start = perf_counter()
-    body_centroid, vert_centroid = utils.get_vertebrae_body_centroids(
+    centroids = utils.get_vertebrae_body_centroids(
         spine_mask, DEFAULT_VERTEBRA_CLASSES["vertebrae_L3"]
     )
 
+    # only need to check for the whole vertebrae centroid
+    if not centroids.vertebre_centroid:
+        return (None, None, None)
+
     # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
-    tissue_slice = ct_volume[..., body_centroid[1] : body_centroid[1] + 1]
+    tissue_slice = ct_volume[
+        ..., centroids.body_centroid[1] : centroids.body_centroid[1] + 1
+    ]
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
@@ -245,9 +261,6 @@ def extract_slices(
 
     return (
         ImageData(image=tissue_slice, path=output_filepath),
-        Centroids(
-            vertebre_centroid=vert_centroid,
-            body_centroid=body_centroid,
-        ),
+        centroids,
         duration,
     )

@@ -148,18 +148,30 @@ def main(args: argparse.Namespace):
 
         if args.upload_labkey:
             # TEST:
-            labkey_api._upload_data(
-                schema_name="lists",
-                query_name="CTVysetreni",
-                rows=study_case._to_list_of_dicts(),
-            )
+            study_case_list = study_case._to_list_of_dicts()
+            if study_case_list:
+                labkey_api._upload_data(
+                    schema_name="lists",
+                    query_name="CTVysetreni",
+                    rows=study_case_list,
+                )
+            else:
+                main_logger.warning(
+                    f"study case participant {study_case.participant}, study {study_case.study_inst_uid} has no DICOM data to send to labkey"
+                )
 
             # TEST:
-            labkey_api._upload_data(
-                schema_name="lists",
-                query_name="CTSegmentationData",
-                rows=segmentation_result._to_list_of_dicts(),
-            )
+            segmentation_result_list = segmentation_result._to_list_of_dicts()
+            if segmentation_result_list:
+                labkey_api._upload_data(
+                    schema_name="lists",
+                    query_name="CTSegmentationData",
+                    rows=segmentation_result_list,
+                )
+            else:
+                main_logger.warning(
+                    f"participant {study_case.participant}, study {study_case.study_inst_uid} has no segmentation data to send to labkey"
+                )
 
         if args.remove_dicom_files:
             utils.remove_dicom_dir(input_study_dir)
