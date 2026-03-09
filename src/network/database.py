@@ -115,7 +115,7 @@ class LabkeyAPI(APIWrapper):
 
         logger.info(response)
 
-    def exclude_finished_studies(self, input_participants: list[str]) -> list[str]:
+    def exclude_finished_studies(self, finished_study_uids: list[str]) -> list[str]:
         """Query Labkey `CTSegmentationData` table with input participants and exclude participants with finished segmentation.
         If the queried table has no data, ie empty response, `input_participants` is returned instead.
 
@@ -131,19 +131,19 @@ class LabkeyAPI(APIWrapper):
         rows = self._select_rows(
             schema_name="lists",
             query_name="CTSegmentationData",
-            columns=["study_inst_uid", "PARTICIPANT"],
-            filter_dict={"PARTICIPANT": input_participants},
+            columns=["STUDY_INST_UID"],
+            filter_dict={"STUDY_INST_UID": finished_study_uids},
             sanitize_rows=False,
         )
 
         if not rows:
-            return input_participants
+            return finished_study_uids
 
         finished_studies = set([row.participant for row in rows])
         logger.info(
             f"excluding {len(finished_studies)} participants due to existing segmentation results"
         )
-        return list(set(input_participants).symmetric_difference(finished_studies))
+        return list(set(finished_study_uids).symmetric_difference(finished_studies))
 
     @classmethod
     def init_from_json(cls, verbose: bool = False) -> Self:
