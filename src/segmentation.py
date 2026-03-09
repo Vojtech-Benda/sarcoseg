@@ -6,7 +6,13 @@ import SimpleITK as sitk
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
 from src import utils, visualization
-from src.classes import Centroids, ImageData, SegmentationResult, StudyData
+from src.classes import (
+    Centroids,
+    ImageData,
+    ProcessResult,
+    SegmentationResult,
+    StudyData,
+)
 from src.slogger import get_logger
 from src.utils import DEFAULT_VERTEBRA_CLASSES
 
@@ -52,8 +58,6 @@ def segment_ct_study(
             series_filepath, series_output_dir
         )
 
-        # TODO: check for existing L3 label 29 in spine_mask
-
         input_volume_data: ImageData = utils.read_volume(series_filepath, "LPI")
         slice_extraction_result = extract_slices(
             input_volume_data.image,
@@ -64,6 +68,9 @@ def segment_ct_study(
         if not any(slice_extraction_result):
             logger.warning(
                 f"CT series {series_inst_uid} of participant {seg_result.participant} has no L3 mask"
+            )
+            seg_result.series_process_result[series_inst_uid] = (
+                ProcessResult.MISSING_L3_MASK
             )
             continue
 
@@ -92,6 +99,9 @@ def segment_ct_study(
         metrics.contrast_phase = study_case.series[series_inst_uid].contrast_phase
 
         seg_result.metrics_dict[series_inst_uid] = metrics
+        seg_result.series_process_result[series_inst_uid] = (
+            ProcessResult.SEGMENTATION_FINISHED
+        )
 
         case_images_dir = series_output_dir.joinpath("images")
         case_images_dir.mkdir(exist_ok=True)

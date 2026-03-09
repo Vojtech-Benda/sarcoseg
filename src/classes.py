@@ -1,8 +1,10 @@
+import enum
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
+import pandas as pd
 from SimpleITK import Image
 
 from src import slogger
@@ -181,14 +183,21 @@ class MetricsData:
         )
 
 
+class ProcessResult(enum.Enum):
+    MISSING_L3_MASK = "MISSING_L3_MASK"
+    SEGMENTATION_FINISHED = "SEGMENTATION_FINISHED"
+    MISSING_ON_PACS_OR_LOCAL = "MISSING_ON_PACS_OR_LOCAl"
+    NO_SERIES_TO_SEGMENT = "NO_SERIES_TO_SEGMENT"
+
+
 @dataclass
 class SegmentationResult:
     participant: str
     study_inst_uid: str
     # id: str | None = None
     patient_height: float | None = None
-
     metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
+    series_process_result: dict[str, ProcessResult] = field(default_factory=dict)
 
     @classmethod
     def _from_study_case(cls, study_data: StudyData) -> Self:
@@ -248,3 +257,37 @@ class SegmentationResult:
             "study_inst_uid": self.study_inst_uid,
         }
         return [_base_dict | metric._to_dict() for metric in self.metrics_dict.values()]
+
+
+@dataclass
+class Report:
+    timestamp: str
+    data: list[dict[str, Any]] = field(default_factory=list)
+
+    def add_case(
+        self,
+        participant: str,
+        study_instance_uid: str,
+        process_result: ProcessResult,
+        series_instance_uid: str | None = None,
+    ):
+        row: dict[str, Any] = {
+            "participant": participant,
+            "study_inst_uid": study_instance_uid,
+            "series_inst_uid": series_instance_uid,
+            "process_result": process_result.value,
+        }
+        self.data.append(row)
+        msg = f"case {participant}, study {study_instance_uid}, series {series_instance_uid}: {process_result.value}"
+        if process_result in (
+            ProcessResult.MISSING_L3_MASK,
+            ProcessResult.MISSING_ON_PACS_OR_LOCAL,
+            ProcessResult.NO_SERIES_TO_SEGMENT,
+        ):
+            logger.warning(msg)
+        else:
+            logger.info(msg)
+
+    def write_report(self, directory: str | Path):
+        df = pd.DataFrame(self.data)
+        df.to_csv(Path(directory, f"./report_{self.timestamp}.csv"), index=False)

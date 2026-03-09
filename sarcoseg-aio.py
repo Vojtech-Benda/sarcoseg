@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src import preprocessing, segmentation, slogger, utils
-from src.classes import StudyData
+from src.classes import ProcessResult, Report, StudyData
 from src.network import database, pacs
 
 
@@ -102,6 +102,8 @@ def main(args: argparse.Namespace):
     output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 
+    report = Report(timestamp)
+
     for study_case in queried_study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
@@ -116,6 +118,11 @@ def main(args: argparse.Namespace):
             )
 
             if status == -1:
+                report.add_case(
+                    study_case.participant,
+                    study_case.study_inst_uid,
+                    ProcessResult.MISSING_ON_PACS_OR_LOCAL,
+                )
                 continue
 
         output_study_dir = Path(output_dir, study_case.study_inst_uid)
@@ -133,6 +140,11 @@ def main(args: argparse.Namespace):
             main_logger.warning(
                 f"participant {study_case.participant} study {study_case.study_inst_uid} has no series to segment"
             )
+            report.add_case(
+                study_case.participant,
+                study_case.study_inst_uid,
+                ProcessResult.NO_SERIES_TO_SEGMENT,
+            )
             continue
 
         main_logger.info(
@@ -143,6 +155,14 @@ def main(args: argparse.Namespace):
             output_study_dir,
             study_case=study_case,
         )
+
+        for series_uid, result in segmentation_result.series_process_result:
+            report.add_case(
+                study_case.participant,
+                study_case.study_inst_uid,
+                ProcessResult(result),
+                series_uid,
+            )
 
         print(segmentation_result)
 
@@ -179,7 +199,8 @@ def main(args: argparse.Namespace):
     if not any(output_dir.iterdir()):
         utils.remove_empty_segmentation_dir(output_dir)
 
-    utils.make_report(queried_study_cases, output_dir, timestamp)
+    report.write_report(output_dir)
+    # utils.make_report(queried_study_cases, output_dir, timestamp)
 
 
 if __name__ == "__main__":
