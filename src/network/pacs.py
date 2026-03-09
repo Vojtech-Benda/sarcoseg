@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import Self
 
+from pydicom import dcmread
 from pynetdicom.apps.echoscu import echoscu
 from pynetdicom.apps.movescu import movescu
 
@@ -11,6 +12,8 @@ from src import slogger
 from src.io import read_json
 
 logger = slogger.get_logger(__name__)
+
+WRONG_IMAGE_TYPES = ["DERIVED", "SECONDARY", "OTHER", "LOCALIZER"]
 
 
 class PacsAPI:
@@ -33,31 +36,71 @@ class PacsAPI:
     def _movescu(self, study_inst_uid: str, download_directory: str | Path):
         os.makedirs(download_directory, exist_ok=True)
 
+        # args_findscu = [
+        #     "./dcmtk/findscu",
+        #     self.ip,
+        #     str(self.port),
+        #     "-aet",
+        #     self.aet,
+        #     "-aec",
+        #     self.aec,
+        #     "-S",
+        #     "-X",  # store responses
+        #     "-k",
+        #     "QueryRetrieveLevel=SERIES",
+        #     "-k",
+        #     f"StudyInstanceUID={study_inst_uid}",
+        #     "-od",
+        #     str(download_directory),
+        # ]
+        # result = subprocess.run(args_findscu, capture_output=True, text=True)
+        # print(result.returncode)
+        # if result.returncode == -1
+        #     return result.returncode
+
+        # # TODO: filter out response files
+        # response_files = list(Path(download_directory).rglob("rsp*.dcm"))
+
+        # query_files = []
+        # for res_file in response_files:
+        #     ds = dcmread(res_file)
+
+        #     series_des = ds.get("SeriesDescription", "")
+        #     if series_des and "dose report" in series_des.lower():
+        #         query_files.append(res_file)
+
+        #     image_type = ds.get("ImageType", [])
+        #     if image_type and any(img_type in WRONG_IMAGE_TYPES for img_type in image_type):
+        #         continue
+
+        #     query_files.append(res_file)
+
+        # # clean the download directory
+        # [os.remove(f) for f in response_files]
+
         args = [
-            sys.executable,
-            movescu.__file__,
+            "./dcmtk/movescu",
             self.ip,
             str(self.port),
             "-aec",
             self.aec,
             "-aet",
             self.aet,
-            "-aem",
-            self.aem,
-            "--store",
-            "--store-port",
+            "--port",
             str(self.store_port),
             "-od",
             str(download_directory),
+            "-S",
             "-k",
             "QueryRetrieveLevel=STUDY",
             "-k",
             f"StudyInstanceUID={study_inst_uid}",
+            # TODO: add response files here!!!
         ]
 
         logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
         try:
-            ret = subprocess.run(args, capture_output=True, text=True)
+            result = subprocess.run(args, capture_output=True, text=True)
             # movescu.main(args)
         except SystemExit:
             logger.info("movescu finished and tried to exit; continuing execution")

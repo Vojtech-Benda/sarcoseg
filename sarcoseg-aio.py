@@ -63,16 +63,18 @@ def main(args: argparse.Namespace):
     verbose = args.verbose
     main_logger = slogger.get_logger(__name__)
 
-    participant_list = utils.read_patient_list(args.participant_list)
-
-    participant_list = participant_list.participant.to_list()
+    participant_list = utils.read_patient_list(
+        args.participant_list, columns=["participant", "study_instance_uid"]
+    )
 
     labkey_api = database.LabkeyAPI.init_from_json(verbose=verbose)
     if not labkey_api.is_labkey_reachable():
         main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    participant_list = labkey_api.exclude_finished_studies(participant_list)
+    finished_study_uids = labkey_api.exclude_finished_studies(
+        participant_list.study_instance_uid.to_list()
+    )
 
     queried_study_cases: list[StudyData] = labkey_api._select_rows(
         schema_name="lists",
@@ -84,7 +86,7 @@ def main(args: argparse.Namespace):
             "PACS_CISLO",
             "VYSKA_PAC.",
         ],  # TODO: possibly add CAS_VYSETRENI
-        filter_dict={"PARTICIPANT": participant_list},
+        filter_dict={"STUDY_INSTANCE_UID": finished_study_uids},
         sanitize_rows=True,
     )
 
