@@ -1,6 +1,7 @@
 import sys
 
 import pandas as pd
+from labkey.query import QueryFilter
 from pydicom import Dataset
 from pynetdicom import AE
 from pynetdicom.sop_class import _QR_CLASSES
@@ -30,6 +31,7 @@ response = labkey_api.query.select_rows(
     query_name="RDG-CT-Sarko-All",
     columns=",".join(columns),
     max_rows=-1,
+    filter_array=[QueryFilter("study_instance_uid", "", QueryFilter.Types.IS_BLANK)],
 )
 
 if not response.get("rows", None):
