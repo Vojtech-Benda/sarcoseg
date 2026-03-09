@@ -1,29 +1,32 @@
 import unittest
 from pathlib import Path
 
+import pytest
+
 from src.classes import StudyData
-from src.network import database, pacs
 from src.io import read_json
+from src.network import database, pacs
 
 
-class TestPacs(unittest.TestCase):
+class TestPacs:
     api = pacs.PacsAPI.init_from_json()
     STUDY_INST_UID: str
 
     def test_echoscu(self):
         ret = self.api._echoscu(verbose=True)
-        self.assertEqual(ret.returncode, 0)
+        assert ret.returncode == 0
 
     def test_movescu(self):
         self.STUDY_INST_UID = read_json("./src/network/network.json")[
             "test_participant"
         ].get("test_study_uid")
-        validate_study_uid(self.STUDY_INST_UID)
 
         if not self.STUDY_INST_UID:
-            self.fail(
+            pytest.fail(
                 f"test_movescu requires a valid StudyInstanceUID, given UID is `{self.STUDY_INST_UID}`"
             )
+
+        validate_study_uid(self.STUDY_INST_UID)
 
         download_dir = Path(f"./tests/download/{self.STUDY_INST_UID}")
 
@@ -35,16 +38,14 @@ class TestPacs(unittest.TestCase):
 
         files = list(download_dir.rglob("*"))
 
-        self.assertNotEqual(
-            len(files), 0, "output download directory empty, no DICOM files downloaded"
-        )
+        assert len(files) != 0
 
 
-class TestLabkey(unittest.TestCase):
+class TestLabkey:
     api = database.LabkeyAPI.init_from_json(verbose=True)
 
     def test_labkey_connection(self):
-        self.assertTrue(self.api.is_labkey_reachable())
+        assert self.api.is_labkey_reachable()
 
     def test_labkey_query(self):
         rows = [
@@ -65,7 +66,7 @@ class TestLabkey(unittest.TestCase):
         ]
 
         for data, true_data in zip(labkey_data, true_labkey_data):
-            self.assertEqual(data, true_data)
+            assert data == true_data
             print(f"{data=}\n{true_data=}")
 
 

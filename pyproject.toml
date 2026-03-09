@@ -21,4 +21,7 @@ dependencies = [
     "dcm2niix>=1.0.20250506",
     "dotenv>=0.9.9",
     "pynetdicom>=3.0.4",
+    "pytest>=9.0.2",
 ]
+
+testpaths = ["tests"]
