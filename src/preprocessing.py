@@ -5,6 +5,11 @@ from statistics import mean
 
 import dcm2niix
 import pydicom
+from SimpleITK import (
+    DICOMOrient,
+    ImageSeriesReader,
+    WriteImage,
+)
 
 from src import slogger
 from src.classes import SeriesData, StudyData
@@ -39,7 +44,7 @@ def preprocess_dicom_study(
         return None
 
     logger.info(
-        f"preprocessing DICOM files for participant {study_case.participant}, study {study_case.study_inst_uid}"
+        f"preprocessing DICOM files for {study_case.participant=}, {study_case.study_inst_uid=}"
     )
 
     series_files_map, dose_report_path = filter_dicom_files(dicom_files)
@@ -58,47 +63,56 @@ def preprocess_dicom_study(
 
     study_case._write_to_json(output_dir)
 
-    for series_data in study_case.series.values():
-        write_series_as_nifti(output_dir, series_data)
+    write_series_as_nifti(
+        output_dir, {uid: series.filepaths for uid, series in study_case.series.items()}
+    )
 
     logger.info("-" * 25)
 
 
-def write_series_as_nifti(output_study_dir: Path, series_data: SeriesData):
-    logger.info(f"writing series instance uid {series_data.series_inst_uid}")
+def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
+    reader = ImageSeriesReader()
+    for series_uid, filepaths in series.items():
+        logger.info(f"converting {series_uid=} DICOM volume as NifTI")
 
-    output_series_dir = output_study_dir.joinpath(series_data.series_inst_uid)
-    output_series_dir.mkdir(exist_ok=True, parents=True)
-    output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
+        output_series_dir = output_study_dir.joinpath(series_uid)
+        output_series_dir.mkdir(exist_ok=True, parents=True)
+        output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
 
-    tmp_dir = Path(output_study_dir, f"tmp_{series_data.description}")
-    tmp_dir.mkdir(exist_ok=True, parents=True)
-    [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in series_data.filepaths]
+        reader.SetFileNames(filepaths)
+        image = reader.Execute()
+        # FIXME: volume is upside down when loaded in slicer, is there a fix???
+        WriteImage(DICOMOrient(image, "LPS"), output_filepath)
+        logger.info(f"finished convertion for {series_uid=}")
 
-    if output_filepath.exists():
-        logger.info(
-            f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
-        )
+    # tmp_dir = Path(output_study_dir, f"tmp_{series_data.description}")
+    # tmp_dir.mkdir(exist_ok=True, parents=True)
+    # [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in series_data.filepaths]
 
-    try:
-        args = [
-            "-o",
-            str(output_series_dir),
-            "-f",
-            "input_ct_volume",
-            "-z",
-            "y",
-            "-b",
-            "n",
-            "-w",
-            "1",
-            str(tmp_dir),
-        ]
-        returncode = dcm2niix.main(args, capture_output=True, text=True)
-        shutil.rmtree(tmp_dir)
-    except RuntimeError as err:
-        logger.error(err)
-    logger.info(f"finished NifTI conversion with {returncode=}\n")
+    # if output_filepath.exists():
+    #     logger.info(
+    #         f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
+    #     )
+
+    # try:
+    #     args = [
+    #         "-o",
+    #         str(output_series_dir),
+    #         "-f",
+    #         "input_ct_volume",
+    #         "-z",
+    #         "y",
+    #         "-b",
+    #         "n",
+    #         "-w",
+    #         "1",
+    #         str(tmp_dir),
+    #     ]
+    #     returncode = dcm2niix.main(args, capture_output=True, text=True)
+    #     shutil.rmtree(tmp_dir)
+    # except RuntimeError as err:
+    #     logger.error(err)
+    # logger.info(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
