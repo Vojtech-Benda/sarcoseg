@@ -9,12 +9,11 @@ from src.classes import Centroids, MetricsData, SegmentationResult
 
 class TestSegmentation(unittest.TestCase):
     def test_study_segment(self):
-        test_uid = "1.3.6.1.4.1.36302.1.1.2.67388.4692994"
-        path = Path("tests/output/", test_uid)
+        test_uid = "1.3.6.1.4.1.36302.1.1.2.67022.3596219"
+        path = Path("./tests/output", test_uid)
         segmentation.segment_ct_study(
             input_dir=path,
-            output_dir=path,
-            save_mask_overlays=True,
+            output_dir=Path("./tests/output", test_uid),
         )
 
     def test_spine_segment(self):
@@ -24,7 +23,16 @@ class TestSegmentation(unittest.TestCase):
         pass
 
     def test_tissue_extract(self):
-        pass
+        spine_mask = utils.read_volume(
+            r"outputs\2026-02-23_13-22-49\1.3.6.1.4.1.36302.1.1.2.67386.4681372\1.3.12.2.1107.5.1.4.75968.30000025063005325811100017182\spine_mask.nii.gz",
+            "LPI",
+        )
+        volume = utils.read_volume(
+            r"outputs\2026-02-23_13-22-49\1.3.6.1.4.1.36302.1.1.2.67386.4681372\1.3.12.2.1107.5.1.4.75968.30000025063005325811100017182\input_ct_volume.nii.gz",
+            "LPI",
+        )
+
+        segmentation.extract_slices(volume.image, spine_mask.image, "./")
 
     def test_postproc_tissue_mask(self):
         pass
@@ -39,9 +47,6 @@ class TestSegmentation(unittest.TestCase):
 
         metrics = utils.compute_metrics(tissue_mask, tissue_volume, 170.0)
         print(metrics)
-
-    def test_mask_overlays(self):
-        pass
 
     def test_metrics_patient_data(self):
         output_dir = Path("tests/output/1.3.6.1.4.1.36302.1.1.2.67388.4692994")
