@@ -57,7 +57,7 @@ if not assoc.is_established:
     print("can't establish PACS association")
     sys.exit(-1)
 
-for row in tqdm(raw_rows):
+for row in tqdm(raw_rows, miniters=100):
     ds = Dataset()
     ds.QueryRetrieveLevel = "STUDY"
     ds.PatientID = row["RODNE_CISLO"]
