@@ -16,10 +16,11 @@ tests/input
 tests/output
 tests/download
 labkey_filter.py
+dcmtk/
 
 # ide dirs
 .vscode/
-.idea/*
+.idea/
 .zed/
 
 # pycache
