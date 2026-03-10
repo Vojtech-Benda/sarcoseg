@@ -23,7 +23,7 @@ class TestPacs:
 
         if not self.STUDY_INST_UID:
             pytest.fail(
-                f"test_movescu requires a valid StudyInstanceUID, given UID is `{self.STUDY_INST_UID}`"
+                f"test_movescu requires a valid StudyInstanceUID, given UID is {self.STUDY_INST_UID=}"
             )
 
         validate_study_uid(self.STUDY_INST_UID)
@@ -32,7 +32,7 @@ class TestPacs:
 
         if not download_dir.exists() and list(download_dir.rglob("*")) != 0:
             print(
-                f"input study directory {self.STUDY_INST_UID} not found, trying to download from PACS instead"
+                f"input study directory `{self.STUDY_INST_UID}` not found, trying to download from PACS instead"
             )
             self.api._movescu(self.STUDY_INST_UID, download_dir)
 

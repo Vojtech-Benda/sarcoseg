@@ -52,9 +52,7 @@ class TestPreprocessDicom(unittest.TestCase):
                 series={key: SeriesData(**val) for key, val in series_dict.items()},
             )
 
-        print(
-            f"participant {test_study_data.participant}, study inst uid {test_study_data.study_inst_uid}"
-        )
+        print(f"{test_study_data.participant=}, {test_study_data.study_inst_uid=}")
         self.assertEqual(true_participant, test_study_data.participant)
         self.assertEqual(true_uid, test_study_data.study_inst_uid)
 
