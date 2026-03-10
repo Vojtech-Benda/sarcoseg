@@ -218,6 +218,11 @@ class SegmentationResult:
         # if exclude_fields:
         #     exclude.update(exclude_fields)
 
+        # TODO: temporary fix for unserializable ProcessResult
+        self.series_process_result = {
+            uid: value.value for uid, value in self.series_process_result.items()
+        }
+
         serialized = asdict(
             self,
             dict_factory=lambda dic: {key: val for key, val in dic},
