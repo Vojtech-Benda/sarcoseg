@@ -115,7 +115,7 @@ class StudyData:
             json.dump(serialized, file, indent=2)
 
         logger.info(
-            f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}\nfields excluded: {exclude}"
+            f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}\nfields excluded: {exclude}"
         )
 
     def _to_list_of_dicts(self) -> list[dict[str, Any]]:
@@ -237,7 +237,7 @@ class SegmentationResult:
             json.dump(serialized, file, indent=2)
 
         logger.info(
-            f"written DICOM tags for participant {self.participant}, study instance uid {self.study_inst_uid}"
+            f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}"
         )
 
     @classmethod

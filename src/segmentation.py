@@ -51,7 +51,7 @@ def segment_ct_study(
         series_inst_uid = series_output_dir.parts[-1]
 
         logger.info(
-            f"running segmentation on CT series {series_inst_uid} of participant {seg_result.participant}"
+            f"running segmentation on {seg_result.participant=}, {series_inst_uid=}"
         )
 
         spine_mask_data, spine_duration = segment_spine(
@@ -67,7 +67,7 @@ def segment_ct_study(
 
         if not any(slice_extraction_result):
             logger.warning(
-                f"CT series {series_inst_uid} of participant {seg_result.participant} has no L3 mask"
+                f"CT {seg_result.participant=}, {series_inst_uid=} has no L3 mask"
             )
             seg_result.series_process_result[series_inst_uid] = (
                 ProcessResult.MISSING_L3_MASK
@@ -179,7 +179,7 @@ def segment_spine(
     subprocess.run(args=command)
 
     duration = perf_counter() - start
-    logger.info(f"spine segmentation finised in {duration:.2f} seconds")
+    logger.info(f"spine segmentation finised in {duration:.4f} seconds")
 
     return utils.read_volume(spine_mask_path, "LPI"), duration
 
@@ -206,7 +206,7 @@ def segment_tissues(
         logger.info(f"nnUNet finished `{tissue_volume_path}`")
 
     duration = perf_counter() - start
-    logger.info(f"tissue segmentation finished in {duration}")
+    logger.info(f"tissue segmentation finished in {duration:.4f} seconds")
 
     return utils.read_volume(output_filepath, "LPI"), duration
 
@@ -267,7 +267,7 @@ def extract_slices(
     sitk.WriteImage(tissue_slice, output_filepath)
 
     duration = perf_counter() - start
-    logger.info(f"slice extraction finished in {duration} seconds")
+    logger.info(f"slice extraction finished in {duration:.4f} seconds")
 
     return (
         ImageData(image=tissue_slice, path=output_filepath),

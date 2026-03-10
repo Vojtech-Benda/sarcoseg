@@ -128,7 +128,7 @@ def main(args: argparse.Namespace):
         output_study_dir = Path(output_dir, study_case.study_inst_uid)
 
         main_logger.info(
-            f"preprocessing study {study_case.study_inst_uid} participant {study_case.participant}"
+            f"preprocessing {study_case.participant=}, {study_case.study_inst_uid=}"
         )
         preprocessing.preprocess_dicom_study(
             input_study_dir,
@@ -138,7 +138,7 @@ def main(args: argparse.Namespace):
 
         if not study_case.series:
             main_logger.warning(
-                f"participant {study_case.participant} study {study_case.study_inst_uid} has no series to segment"
+                f"{study_case.participant=}, {study_case.study_inst_uid=} has no series to segment"
             )
             report.add_case(
                 study_case.participant,
@@ -148,7 +148,7 @@ def main(args: argparse.Namespace):
             continue
 
         main_logger.info(
-            f"segmenting study {study_case.study_inst_uid} for patient {study_case.participant}"
+            f"segmenting {study_case.participant=}, {study_case.study_inst_uid=}"
         )
         segmentation_result = segmentation.segment_ct_study(
             output_study_dir,
@@ -156,7 +156,7 @@ def main(args: argparse.Namespace):
             study_case=study_case,
         )
 
-        for series_uid, result in segmentation_result.series_process_result:
+        for series_uid, result in segmentation_result.series_process_result.items():
             report.add_case(
                 study_case.participant,
                 study_case.study_inst_uid,
@@ -177,7 +177,7 @@ def main(args: argparse.Namespace):
                 )
             else:
                 main_logger.warning(
-                    f"study case participant {study_case.participant}, study {study_case.study_inst_uid} has no DICOM data to send to labkey"
+                    f"study case {study_case.participant=}, {study_case.study_inst_uid=} has no DICOM data to send to labkey"
                 )
 
             # TEST:
@@ -190,7 +190,7 @@ def main(args: argparse.Namespace):
                 )
             else:
                 main_logger.warning(
-                    f"participant {study_case.participant}, study {study_case.study_inst_uid} has no segmentation data to send to labkey"
+                    f"study case {study_case.participant=}, {study_case.study_inst_uid=} has no segmentation data to send to labkey"
                 )
 
         if args.remove_dicom_files:
