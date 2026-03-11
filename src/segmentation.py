@@ -65,7 +65,7 @@ def segment_ct_study(
             series_output_dir,
         )
 
-        if not any(slice_extraction_result):
+        if not slice_extraction_result:
             logger.warning(
                 f"CT {seg_result.participant=}, {series_inst_uid=} has no L3 mask"
             )
@@ -216,7 +216,7 @@ def extract_slices(
     spine_mask: sitk.Image | Path | str,
     output_dir: Path | str,
     slices_num: int = 0,
-) -> tuple[ImageData, Centroids, float] | tuple[None, ...]:
+) -> tuple[ImageData, Centroids, float] | None:
     """
     Extract axial slices from input CT volume at vertebrae body's centroid.
 
@@ -253,7 +253,7 @@ def extract_slices(
 
     # only need to check for the whole vertebrae centroid
     if not centroids.vertebre_centroid:
-        return (None, None, None)
+        return None
 
     # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
     tissue_slice = ct_volume[
