@@ -92,13 +92,16 @@ def select(api: database.LabkeyAPI, schema: str, query: str, columns: list[str])
 
         # extended tiem range to account for a few seconds up to few minute difference between study time on Labkey vs Pacs
         # example, Labkey: 13:59:20.000 vs Pacs: 14:00:40.000
-        time_range = f"{int(time[0])}-{int(time[0]) + 1}"
+        # need to account for time overflow 23:59 -> 24:00 - must be 00:00 instead
+
+        time_range = (int(time[0]), upper if (upper := int(time[0]) + 1) < 24 else 0)
+        # time_range = f"{int(time[0]):02}-{int(time[0]) + 1:02}"
 
         ds = Dataset()
         ds.QueryRetrieveLevel = "STUDY"
         ds.PatientID = row["RODNE_CISLO"]
         ds.StudyDate = date.replace("-", "")
-        ds.StudyDate = time_range
+        ds.StudyDate = f"{time_range[0]:02}-{time_range[1]:02}"  # format as 2 digit with leading zero for hours < 10
         ds.ModalitiesInStudy = "CT"
         ds.AccessionNumber = ""
         ds.StudyInstanceUID = ""
@@ -113,6 +116,8 @@ def select(api: database.LabkeyAPI, schema: str, query: str, columns: list[str])
         row["StudyDescription"] = [
             resp.get("StudyDescription", "n/a") for resp in success_resp
         ]
+        row["StudyDate"] = [resp.get("StudyDate", "n/a") for resp in success_resp]
+        row["StudyTime"] = [resp.get("StudyTime", "n/a") for resp in success_resp]
 
     assoc.release()
     if assoc.is_released:
@@ -128,7 +133,9 @@ def select(api: database.LabkeyAPI, schema: str, query: str, columns: list[str])
     if len(single_studies) > 0:
         df_single_studies = (
             pd.DataFrame(single_studies)
-            .explode(["STUDY_INSTANCE_UID", "StudyDescription"])
+            .explode(
+                ["STUDY_INSTANCE_UID", "StudyDescription", "StudyDate", "StudyTime"]
+            )
             .reset_index(drop=True)
         )
         df_single_studies.to_csv(
@@ -140,7 +147,9 @@ def select(api: database.LabkeyAPI, schema: str, query: str, columns: list[str])
     if len(multiple_studies) > 0:
         df_multiple_studies = (
             pd.DataFrame(multiple_studies)
-            .explode(["STUDY_INSTANCE_UID", "StudyDescription"])
+            .explode(
+                ["STUDY_INSTANCE_UID", "StudyDescription", "StudyDate", "StudyTime"]
+            )
             .reset_index(drop=True)
         )
         df_multiple_studies.to_csv(
