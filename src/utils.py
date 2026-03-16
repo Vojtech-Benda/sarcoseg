@@ -1,4 +1,5 @@
 import json
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -7,8 +8,10 @@ from time import perf_counter
 import pandas as pd
 import SimpleITK as sitk
 
-from src import slogger
+# from src import slogger
 from src.classes import Centroids, ImageData, MetricsData, StudyData
+
+log = logging.getLogger("utils")
 
 DEFAULT_VERTEBRA_CLASSES: dict[str, int] = {
     "vertebrae_L1": 31,
@@ -35,7 +38,8 @@ TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
 }
 
 
-logger = slogger.get_logger(__name__)
+# logger = slogger.get_logger(__name__)
+log = logging.getLogger("utils")
 
 
 def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
@@ -59,7 +63,7 @@ def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
 
     # check if L3 has been segmented!!
     if l3_label not in label_filt.GetLabels():
-        logger.warning("no L3 mask label found")
+        log.warning("no L3 mask label found")
         return Centroids()
 
     # get the whole L3 vertebrae centroid
@@ -110,7 +114,7 @@ def postprocess_tissue_masks(
     sitk.WriteImage(mask, processed_mask_path)
 
     duration = perf_counter() - start
-    logger.info(f"tissue postprocessing finished in {duration:.2f} second")
+    log.info(f"tissue postprocessing finished in {duration:.4f} second")
     return ImageData(image=mask, path=processed_mask_path), duration
 
 
@@ -156,7 +160,7 @@ def compute_metrics(
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
-    smi = None
+    smi = 0.0
     if patient_height:
         # skeletal muscle index (smi) = muscle area / (patient height ^ 2)
         # units: cm2 / m2 = (cm2) / (cm / 100) ^ 2
@@ -171,13 +175,19 @@ def read_patient_list(
         filepath = Path(filepath)
 
     if not filepath.is_file() or not filepath.exists():
-        logger.error(f"patient list at `{filepath}` is not a file or doesn't exist")
+        # log.error(f"patient list at `{filepath}` is not a file or doesn't exist")
         raise FileNotFoundError(f"Patient list file not found at {filepath}")
 
     suffix = filepath.suffix
     if suffix == ".csv":
         df = pd.read_csv(
-            filepath, index_col=False, header=0, dtype=str, usecols=columns
+            filepath,
+            index_col=False,
+            header=0,
+            dtype=str,
+            usecols=columns,
+            sep="[,;\t]",
+            engine="python",
         )
     elif suffix in (".xlsx", ".xls"):
         df = pd.read_excel(
@@ -195,12 +205,12 @@ def read_volume(path: Path | str, orientation: str | None) -> ImageData:
 
 
 def remove_empty_segmentation_dir(dirpath: str | Path):
-    logger.info(f"removing empty segmentation directory `{dirpath}`")
+    log.debug(f"removing empty segmentation directory `{dirpath}`")
     shutil.rmtree(dirpath)
 
 
 def remove_dicom_dir(dirpath: str | Path):
-    logger.info(f"removing input DICOM directory `{dirpath}`")
+    log.debug(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
 
 
@@ -242,4 +252,4 @@ def make_report(
     with open(report_path, "w") as file:
         json.dump(report, file, indent=4)
 
-    logger.info(f"Segmentation report written to `{report_path}`")
+    log.debug(f"Segmentation report written to `{report_path}`")

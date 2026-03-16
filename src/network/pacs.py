@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import sys
@@ -8,10 +9,10 @@ from pydicom import dcmread
 from pynetdicom.apps.echoscu import echoscu
 from pynetdicom.apps.movescu import movescu
 
-from src import slogger
+# from src import slogger
 from src.io import read_json
 
-logger = slogger.get_logger(__name__)
+log = logging.getLogger("pacs")
 
 WRONG_IMAGE_TYPES = ["DERIVED", "SECONDARY", "OTHER", "LOCALIZER"]
 
@@ -98,21 +99,18 @@ class PacsAPI:
             # TODO: add response files here!!!
         ]
 
-        logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
-        try:
-            result = subprocess.run(args, capture_output=True, text=True)
-            # movescu.main(args)
-        except SystemExit:
-            logger.info("movescu finished and tried to exit; continuing execution")
+        log.debug(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
+        result = subprocess.run(args, capture_output=True, text=True)
+        # movescu.main(args)
 
         if len(os.listdir(download_directory)) == 0:
             os.rmdir(download_directory)
-            logger.info(
+            log.error(
                 f"C-MOVE failed downloading data for StudyInstanceUID: {study_inst_uid}"
             )
             return -1
 
-        logger.info("finished C-MOVE")
+        log.debug("finished C-MOVE")
         return 0
 
     def _echoscu(self, verbose: bool = False):
@@ -131,24 +129,21 @@ class PacsAPI:
             args.append("-v")
 
         ret = subprocess.run(args, capture_output=True, text=True)
-        logger.info(f"ECHOSCU return code: {ret.returncode}")
+        log.info(f"ECHOSCU return code: {ret.returncode}")
 
-        if verbose:
-            if ret.stdout:
-                logger.info(f"ECHOSCU stdout: {ret.stdout}")
-            if ret.stderr:
-                logger.info(f"ECHOSCU stderr: {ret.stderr}")
-        return ret
+        if ret.stdout:
+            log.debug(f"ECHOSCU stdout: {ret.stdout}")
+        if ret.stderr:
+            log.debug(f"ECHOSCU stderr: {ret.stderr}")
+        return ret.returncode
 
     @classmethod
     def init_from_json(cls, verbose: bool = False) -> Self:
         conf = read_json("./src/network/network.json")["pacs"]
-
-        if verbose:
-            logger.info(f"initializing PACS API with: {conf}")
+        log.debug(f"initializing PACS API with: {conf}")
 
         if not all(conf.values()):
-            logger.error(f"some fields are missing values: {conf}")
+            log.error(f"some fields are missing values: {conf}")
             raise ValueError("Unable to initialize PACS API")
 
         return cls(

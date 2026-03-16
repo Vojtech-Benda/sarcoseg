@@ -1,5 +1,6 @@
 import enum
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
@@ -7,10 +8,11 @@ from typing import Any, Self
 import pandas as pd
 from SimpleITK import Image
 
-from src import slogger
+# from src import slogger
 from src.io import read_json
 
-logger = slogger.get_logger(__name__)
+# logger = slogger.get_logger(__name__)
+log = logging.getLogger("classes")
 
 
 @dataclass
@@ -50,9 +52,8 @@ class SeriesData:
 class StudyData:
     participant: str
     study_inst_uid: str
-    # id: str | None = field(default=None, compare=False, repr=False)
     patient_id: str | None = field(default=None, repr=False, compare=False)
-    study_date: str | None = field(default=None, repr=False, compare=False)
+    # study_date: str | None = field(default=None, repr=False, compare=False)
     patient_height: float | int | None = field(default=None, repr=False, compare=False)
     series: dict[str, SeriesData] = field(default_factory=dict)
 
@@ -61,7 +62,6 @@ class StudyData:
         return cls(
             participant=row.get("PARTICIPANT"),
             study_inst_uid=row.get("STUDY_INSTANCE_UID"),
-            # id=row.get("ID"),
             patient_id=row.get("RODNE_CISLO"),
             patient_height=row.get("VYSKA_PAC."),
         )
@@ -109,12 +109,12 @@ class StudyData:
 
         filepath = output_dir.joinpath(f"dicom_tags_{self.study_inst_uid}.json")
         if filepath.exists():
-            logger.info(f"overwriting existing file at `{str(filepath)}`")
+            log.debug(f"overwriting existing file at `{str(filepath)}`")
 
         with open(filepath, mode="w", encoding="utf-8") as file:
             json.dump(serialized, file, indent=2)
 
-        logger.info(
+        log.debug(
             f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}\nfields excluded: {exclude}"
         )
 
@@ -123,7 +123,6 @@ class StudyData:
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
             # "study_date": self.study_date,
-            # "id": self.id,
         }
         return [_study | series._to_dict() for series in self.series.values()]
 
@@ -194,17 +193,15 @@ class ProcessResult(enum.Enum):
 class SegmentationResult:
     participant: str
     study_inst_uid: str
-    # id: str | None = None
     patient_height: float | None = None
     metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
-    series_process_result: dict[str, ProcessResult] = field(default_factory=dict)
+    series_process_result: dict[str, ProcessResult | str] = field(default_factory=dict)
 
     @classmethod
     def _from_study_case(cls, study_data: StudyData) -> Self:
         return cls(
             participant=study_data.participant,
             study_inst_uid=study_data.study_inst_uid,
-            # id=study_data.id,
             patient_height=study_data.patient_height,
         )
 
@@ -231,13 +228,13 @@ class SegmentationResult:
 
         filepath = output_dir.joinpath(f"metrics_{self.study_inst_uid}.json")
         if filepath.exists():
-            logger.info(f"overwriting existing file at `{str(filepath)}`")
+            log.debug(f"overwriting existing file at `{str(filepath)}`")
 
         with open(filepath, mode="w", encoding="utf-8") as file:
             json.dump(serialized, file, indent=2)
 
-        logger.info(
-            f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}"
+        log.debug(
+            f"written DICOM tags for participant {self.participant}, study {self.study_inst_uid}"
         )
 
     @classmethod
@@ -247,7 +244,6 @@ class SegmentationResult:
             participant=data.get("participant"),
             study_inst_uid=data.get("study_inst_uid"),
             patient_height=data.get("patient_height"),
-            # id=data.get("id"),
             metrics_dict={
                 uid: MetricsData._from_dict(metric)
                 for uid, metric in data.get("metrics_dict").items()
@@ -257,7 +253,6 @@ class SegmentationResult:
     def _to_list_of_dicts(self) -> list[dict[str, Any]]:
         _base_dict = {
             "participant": self.participant,
-            # "id": self.id,
             "patient_height": self.patient_height,
             "study_inst_uid": self.study_inst_uid,
         }
@@ -267,7 +262,7 @@ class SegmentationResult:
 @dataclass
 class Report:
     timestamp: str
-    data: list[dict[str, Any]] = field(default_factory=list)
+    data_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def add_case(
         self,
@@ -282,17 +277,17 @@ class Report:
             "series_inst_uid": series_instance_uid,
             "process_result": process_result.value,
         }
-        self.data.append(row)
+        self.data_rows.append(row)
         msg = f"case {participant}, study {study_instance_uid}, series {series_instance_uid}: {process_result.value}"
         if process_result in (
             ProcessResult.MISSING_L3_MASK,
             ProcessResult.MISSING_ON_PACS_OR_LOCAL,
             ProcessResult.NO_SERIES_TO_SEGMENT,
         ):
-            logger.warning(msg)
+            log.warning(msg)
         else:
-            logger.info(msg)
+            log.info(msg)
 
     def write_report(self, directory: str | Path):
-        df = pd.DataFrame(self.data)
+        df = pd.DataFrame(self.data_rows)
         df.to_csv(Path(directory, f"./report_{self.timestamp}.csv"), index=False)

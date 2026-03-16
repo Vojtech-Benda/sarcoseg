@@ -1,3 +1,4 @@
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -6,11 +7,11 @@ from statistics import mean
 import dcm2niix
 import pydicom
 
-from src import slogger
+# from src import slogger
 from src.classes import SeriesData, StudyData
 
-logger = slogger.get_logger(__name__)
-
+# logger = slogger.get_logger(__name__)
+log = logging.getLogger("preprocess")
 
 SERIES_DESC_PATTERN = re.compile(
     r"|".join(
@@ -35,11 +36,11 @@ def preprocess_dicom_study(
     dicom_files = find_dicoms(input_dir)
 
     if not dicom_files:
-        logger.error(f"no DICOM files found in `{input_dir}`")
+        log.warning(f"no DICOM files found in `{input_dir}`")
         return None
 
-    logger.info(
-        f"preprocessing DICOM files for {study_case.participant=}, {study_case.study_inst_uid=}"
+    log.debug(
+        f"preprocessing DICOM files for case {study_case.participant}, study {study_case.study_inst_uid}"
     )
 
     series_files_map, dose_report_path = filter_dicom_files(dicom_files)
@@ -52,7 +53,7 @@ def preprocess_dicom_study(
         series_files_map, event_dose_map=event_dose_map
     )
 
-    logger.info(f"found {len(study_case.series)} valid series for segmentation")
+    log.debug(f"found {len(study_case.series)} valid series for segmentation")
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -62,12 +63,10 @@ def preprocess_dicom_study(
         output_dir, {uid: series.filepaths for uid, series in study_case.series.items()}
     )
 
-    logger.info("-" * 25)
-
 
 def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
     for series_uid, filepaths in series.items():
-        logger.info(f"converting {series_uid=} DICOM volume as NifTI")
+        log.debug(f"converting {series_uid=} DICOM volume as NifTI")
 
         output_series_dir = output_study_dir.joinpath(series_uid)
         output_series_dir.mkdir(exist_ok=True, parents=True)
@@ -78,7 +77,7 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
         [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
 
         if output_filepath.exists():
-            logger.info(
+            log.debug(
                 f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
             )
 
@@ -99,8 +98,8 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
             returncode = dcm2niix.main(args, capture_output=True, text=True)
             shutil.rmtree(tmp_dir)
         except RuntimeError as err:
-            logger.error(err)
-        logger.info(f"finished NifTI conversion with {returncode=}\n")
+            log.error(err)
+        log.debug(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
@@ -160,10 +159,10 @@ def filter_dicom_files(
         else:
             series_files_map[series_uid] = [file]
 
-    logger.info(f"found {len(series_files_map.keys())} image series")
+    log.debug(f"found {len(series_files_map.keys())} image series")
 
     if not dose_report_file:
-        logger.warning("dose report DICOM file not found")
+        log.warning("dose report DICOM file not found")
 
     return series_files_map, dose_report_file
 
@@ -207,6 +206,7 @@ def select_series_to_segment(
             convolution_kernel=convolution_kernel[0] if convolution_kernel else "n/a",
         )
 
+        # TODO: possibly remove!!
         if contrast_match := CONTRAST_PHASES_PATTERN.search(series_desc):
             series_data.contrast_phase = contrast_match.group().lower()
         else:
@@ -273,7 +273,7 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
     ds = pydicom.dcmread(dose_filepath)
 
     if ds.Modality != "SR":
-        logger.warning(f"file {dose_filepath} is not dose report")
+        log.warning(f"file {dose_filepath} is not dose report")
         return {}
 
     event_to_dose = {}

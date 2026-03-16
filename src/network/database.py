@@ -1,14 +1,15 @@
+import logging
 from typing import Self
 
 import requests
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 
-from src import slogger
+# from src import slogger
 from src.classes import StudyData
 from src.io import read_json
 
-logger = slogger.get_logger(__name__)
+log = logging.getLogger("database")
 
 
 class LabkeyAPI(APIWrapper):
@@ -22,7 +23,7 @@ class LabkeyAPI(APIWrapper):
         api_key=None,
         disable_csrf=False,
         allow_redirects=False,
-        verbose=False,
+        # debug=False,
     ):
         super().__init__(
             domain,
@@ -34,23 +35,28 @@ class LabkeyAPI(APIWrapper):
             disable_csrf,
             allow_redirects,
         )
-        self.verbose = verbose
+        # self.debug = debug
 
     def is_labkey_reachable(self):
         hostname = self.server_context.hostname
+        reachable = False
+
         try:
             response = requests.get(url=hostname, timeout=5)
             if response.status_code == 200:
-                logger.info(f"{hostname} reachable: status {response.status_code}")
-            else:
-                logger.critical(f"{hostname} is unreachable")
-                return False
+                # log.debug(f"{hostname} reachable: status {response.status_code}")
+                reachable = True
+            # else:
+            # log.debug(f"{hostname} unreachable")
+            # return False
+            log.debug(f"{response.status_code}")
 
         except requests.exceptions.RequestException as e:
-            logger.critical(f"{hostname} is unreachable")
-            logger.critical(f"{e}")
-            return False
-        return True
+            # log.critical(f"{hostname} unreachable")
+            log.critical(f"{e.response}")
+            # reachable = False
+        log.info(f"{hostname} reachable: {reachable}")
+        return reachable
 
     def _select_rows(
         self,
@@ -61,9 +67,8 @@ class LabkeyAPI(APIWrapper):
         filter_dict: dict[str, list[str]] | None = None,
         sanitize_rows: bool = False,
     ) -> list[StudyData]:
-        logger.info("labkey query:")
-        logger.info(
-            f"domain: {self.server_context.hostname}, schema: {schema_name}, query: {query_name}, columns: {columns}"
+        log.info(
+            f"labkey query, schema: {schema_name}, query: {query_name}, columns: {columns}"
         )
 
         filter_array = None
@@ -86,9 +91,9 @@ class LabkeyAPI(APIWrapper):
         )
 
         rows = response.get("rows", [])
-        logger.info(f"returned rows: {len(rows)}")
+        log.info(f"returned rows: {len(rows)}")
         if len(rows) == 0:
-            logger.warning("no returned rows")
+            log.warning(f"no returned rows from {query_name}")
             return []
 
         if sanitize_rows:
@@ -101,7 +106,7 @@ class LabkeyAPI(APIWrapper):
     def _upload_data(
         self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
     ):
-        logger.info(f"sending {len(rows)} rows")
+        log.info(f"sending {len(rows)} rows")
 
         response = None
         if update_rows:
@@ -113,7 +118,7 @@ class LabkeyAPI(APIWrapper):
                 schema_name=schema_name, query_name=query_name, rows=rows
             )
 
-        logger.info(response)
+        log.info(f"updated {response.get('rowsAffected', 'n/a')}")
 
     def exclude_finished_studies(self, finished_study_uids: list[str]) -> list[str]:
         """Query Labkey `CTSegmentationData` table with input participants and exclude participants with finished segmentation.
@@ -126,7 +131,7 @@ class LabkeyAPI(APIWrapper):
             participants (list[str]): List of participants excluding participants existing in the queried table.
         """
 
-        logger.info("checking for participants with finished segmnetations")
+        log.info("checking for participants with finished segmnetations")
 
         rows = self._select_rows(
             schema_name="lists",
@@ -137,39 +142,31 @@ class LabkeyAPI(APIWrapper):
         )
 
         if not rows:
+            log.debug("no rows excluded, returning input")
             return finished_study_uids
 
         finished_studies = set([row.participant for row in rows])
-        logger.info(
+        log.debug(
             f"excluding {len(finished_studies)} participants due to existing segmentation results"
         )
         return list(set(finished_study_uids).symmetric_difference(finished_studies))
 
     @classmethod
-    def init_from_json(cls, verbose: bool = False) -> Self:
+    def init_from_json(cls, debug: bool = False) -> Self:
         """Initialize Labkey API with configuration values from .env file.
 
         Args:
-            verbose (bool, optional): Verbose printing for the API. Defaults to False.
+            debug (bool, optional): Debug printing for the API. Defaults to False.
 
         Returns:
             api (LabkeyAPI): LabkeyAPI instance.
         """
         conf = read_json("./src/network/network.json")["labkey"]
 
-        if verbose:
-            logger.info(f"initializing Labkey API with: {conf}")
+        log.debug(f"initializing Labkey API with: {conf}")
 
         if not all(conf.values()):
-            logger.error(f"some fields are missing values: {conf}")
+            log.error(f"some fields are missing values: {conf}")
             raise ValueError("Unable to initialize LabkeyAPI")
 
-        return cls(conf["domain"], conf["container_path"], verbose=verbose)
-
-
-"""
-def labkey_from_dotenv(verbose: bool = False) -> LabkeyAPI:
-
-    config = dotenv_values()
-    return LabkeyAPI(config["domain"], config["container_path"], verbose=verbose)
-"""
+        return cls(conf["domain"], conf["container_path"])
