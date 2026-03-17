@@ -1,6 +1,7 @@
 import logging
 import re
 import shutil
+from collections import defaultdict
 from pathlib import Path
 from statistics import mean
 
@@ -123,7 +124,7 @@ def filter_dicom_files(
         - **dose_report_file** (Path | None): path to Dose Report file if found, otherwise `None`.
     """
 
-    series_files_map: dict[str, list[Path]] = {}
+    series_files_map: defaultdict[str, list[Path]] = defaultdict(list[Path])
 
     dose_report_file = None
     for file in dicom_files:
@@ -154,10 +155,8 @@ def filter_dicom_files(
             continue
 
         series_uid = ds.SeriesInstanceUID
-        if series_uid in series_files_map:
-            series_files_map[series_uid].append(file)
-        else:
-            series_files_map[series_uid] = [file]
+
+        series_files_map[series_uid].append(file)
 
     log.debug(f"found {len(series_files_map.keys())} image series")
 
@@ -183,7 +182,9 @@ def select_series_to_segment(
         series_list (dict[str, SeriesData]): List of series selected for segmentation.
     """
 
-    series_by_contrast: dict[str, list[SeriesData]] = {}
+    series_by_contrast: defaultdict[str, list[SeriesData]] = defaultdict(
+        list[SeriesData]
+    )
 
     for series_uid, filepaths in series_files_map.items():
         # read only the first file to filter series
@@ -212,10 +213,7 @@ def select_series_to_segment(
         else:
             series_data.contrast_phase = "other"
 
-        if series_data.contrast_phase in series_by_contrast:
-            series_by_contrast[series_data.contrast_phase].append(series_data)
-        else:
-            series_by_contrast[series_data.contrast_phase] = [series_data]
+        series_by_contrast[series_data.contrast_phase].append(series_data)
 
     selected_series = {
         phase: min(
