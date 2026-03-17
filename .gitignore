@@ -17,6 +17,7 @@ tests/output
 tests/download
 labkey_filter.py
 dcmtk/
+tests/
 
 # ide dirs
 .vscode/
