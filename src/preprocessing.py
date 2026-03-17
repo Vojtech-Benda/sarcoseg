@@ -16,7 +16,18 @@ log = logging.getLogger("preprocess")
 
 SERIES_DESC_PATTERN = re.compile(
     r"|".join(
-        ("protocol", "topogram", "scout", "patient", "dose", "report", "monitor")
+        (
+            "protocol",
+            "topogram",
+            "scout",
+            "patient",
+            "dose",
+            "report",
+            "monitor",
+            "coronal",
+            "sagital",
+            "sagittal",
+        )
     ),
     re.IGNORECASE,
 )
