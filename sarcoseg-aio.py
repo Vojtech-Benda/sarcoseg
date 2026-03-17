@@ -106,7 +106,7 @@ def main(args: argparse.Namespace):
         )
         sys.exit(-1)
 
-    pacs_api = pacs.PacsAPI.init_from_json(verbose=debug)
+    pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = Path(args.output_dir)

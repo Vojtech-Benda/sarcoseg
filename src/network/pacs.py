@@ -113,7 +113,7 @@ class PacsAPI:
         log.debug("finished C-MOVE")
         return 0
 
-    def _echoscu(self, verbose: bool = False):
+    def _echoscu(self, debug: bool = False):
         args = [
             sys.executable,
             echoscu.__file__,
@@ -125,8 +125,8 @@ class PacsAPI:
             self.aet,
         ]
 
-        if verbose:
-            args.append("-v")
+        if debug:
+            args.append("-d")
 
         ret = subprocess.run(args, capture_output=True, text=True)
         log.info(f"ECHOSCU return code: {ret.returncode}")
@@ -138,7 +138,7 @@ class PacsAPI:
         return ret.returncode
 
     @classmethod
-    def init_from_json(cls, verbose: bool = False) -> Self:
+    def init_from_json(cls, debug: bool = False) -> Self:
         conf = read_json("./src/network/network.json")["pacs"]
         log.debug(f"initializing PACS API with: {conf}")
 
