@@ -29,10 +29,11 @@ class TestPacs:
 
         download_dir = Path(f"./tests/download/{self.STUDY_INST_UID}")
 
-        self.api._movescu(self.STUDY_INST_UID, download_dir)
+        result = self.api._movescu(self.STUDY_INST_UID, download_dir)
 
         files = [entry for entry in download_dir.glob("*") if entry.is_file()]
 
+        assert result == 0
         assert len(files) != 0
         assert not Path(download_dir, "rsp").exists()
 
