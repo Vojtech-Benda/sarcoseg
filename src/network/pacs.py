@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -7,8 +8,8 @@ from typing import Self
 
 from pydicom import dcmread
 from pynetdicom.apps.echoscu import echoscu
-from pynetdicom.apps.movescu import movescu
 
+# from pynetdicom.apps.movescu import movescu
 # from src import slogger
 from src.io import read_json
 
@@ -35,49 +36,59 @@ class PacsAPI:
         self.store_port = store_port
 
     def _movescu(self, study_inst_uid: str, download_directory: str | Path):
-        os.makedirs(download_directory, exist_ok=True)
+        response_dir = Path(download_directory, "rsp")
+        response_dir.mkdir(exist_ok=True, parents=True)
 
-        # args_findscu = [
-        #     "./dcmtk/findscu",
-        #     self.ip,
-        #     str(self.port),
-        #     "-aet",
-        #     self.aet,
-        #     "-aec",
-        #     self.aec,
-        #     "-S",
-        #     "-X",  # store responses
-        #     "-k",
-        #     "QueryRetrieveLevel=SERIES",
-        #     "-k",
-        #     f"StudyInstanceUID={study_inst_uid}",
-        #     "-od",
-        #     str(download_directory),
-        # ]
-        # result = subprocess.run(args_findscu, capture_output=True, text=True)
-        # print(result.returncode)
-        # if result.returncode == -1
-        #     return result.returncode
+        args_findscu = [
+            "./dcmtk/findscu",
+            self.ip,
+            str(self.port),
+            "-aet",
+            self.aet,
+            "-aec",
+            self.aec,
+            "-S",
+            "-X",  # store responses
+            "-k",
+            "QueryRetrieveLevel=SERIES",
+            "-k",
+            "SeriesDescription",
+            "-k",
+            "SeriesInstanceUID",
+            "-k",
+            "ImageType",
+            "-k",
+            f"StudyInstanceUID={study_inst_uid}",
+            "-od",
+            str(response_dir),
+        ]
+        result = subprocess.run(args_findscu, capture_output=True, text=True)
+        print(f"findscu {result.returncode=}")
+        if result.returncode == -1:
+            return result.returncode
 
-        # # TODO: filter out response files
-        # response_files = list(Path(download_directory).rglob("rsp*.dcm"))
+        response_files = Path(response_dir).glob("rsp*.dcm")
 
-        # query_files = []
-        # for res_file in response_files:
-        #     ds = dcmread(res_file)
+        query_series = []
+        for rsp in response_files:
+            ds = dcmread(rsp)
 
-        #     series_des = ds.get("SeriesDescription", "")
-        #     if series_des and "dose report" in series_des.lower():
-        #         query_files.append(res_file)
+            series_desc = ds.get("SeriesDescription", "")
+            series_uid = ds.get("SeriesInstanceUID")
+            if series_desc and "dose report" in series_desc.lower():
+                query_series.append(series_uid)
+                continue
 
-        #     image_type = ds.get("ImageType", [])
-        #     if image_type and any(img_type in WRONG_IMAGE_TYPES for img_type in image_type):
-        #         continue
+            image_type = ds.get("ImageType", [])
+            if image_type and any(
+                img_type in WRONG_IMAGE_TYPES for img_type in image_type
+            ):
+                continue
 
-        #     query_files.append(res_file)
+            query_series.append(series_uid)
 
-        # # clean the download directory
-        # [os.remove(f) for f in response_files]
+        # clean the download directory
+        shutil.rmtree(response_dir)
 
         args = [
             "./dcmtk/movescu",
@@ -93,15 +104,16 @@ class PacsAPI:
             str(download_directory),
             "-S",
             "-k",
-            "QueryRetrieveLevel=STUDY",
+            "QueryRetrieveLevel=SERIES",
             "-k",
             f"StudyInstanceUID={study_inst_uid}",
+            "-k",
+            f"SeriesInstanceUID={'\\'.join(query_series)}",
             # TODO: add response files here!!!
         ]
 
         log.debug(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
         result = subprocess.run(args, capture_output=True, text=True)
-        # movescu.main(args)
 
         if len(os.listdir(download_directory)) == 0:
             os.rmdir(download_directory)
