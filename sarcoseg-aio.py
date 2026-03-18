@@ -109,7 +109,7 @@ def main(args: argparse.Namespace):
     pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir, timestamp)
     output_dir.mkdir(exist_ok=True)
 
     report = Report(timestamp)
