@@ -64,11 +64,15 @@ def overlay_tissue_mask(
     output_dir: Path,
 ):
     colormap = [channel for color in TISSUE_COLORS for channel in color]
+    tissue_windowed = sitk.Cast(
+        sitk.IntensityWindowing(tissue_volume, -135, 215), sitk.sitkUInt8
+    )
     tissue_overlay = sitk.LabelOverlay(
-        sitk.Cast(sitk.IntensityWindowing(tissue_volume, -135, 215), sitk.sitkUInt8),
+        tissue_windowed,
         tissue_mask,
         opacity=0.75,
         colormap=colormap,
     )
 
+    sitk.WriteImage(tissue_windowed, output_dir.joinpath("tissue_slice.png"))
     sitk.WriteImage(tissue_overlay, output_dir.joinpath("tissue_overlay.png"))
