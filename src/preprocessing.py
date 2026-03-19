@@ -7,6 +7,11 @@ from statistics import mean
 
 import dcm2niix
 import pydicom
+from SimpleITK import (
+    DICOMOrientImageFilter_GetOrientationFromDirectionCosines,
+    ImageSeriesReader,
+    WriteImage,
+)
 
 # from src import slogger
 from src.classes import SeriesData, StudyData
@@ -77,41 +82,49 @@ def preprocess_dicom_study(
 
 
 def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
+    reader = ImageSeriesReader()
+
     for series_uid, filepaths in series.items():
         log.debug(f"converting {series_uid=} DICOM volume as NifTI")
 
         output_series_dir = output_study_dir.joinpath(series_uid)
         output_series_dir.mkdir(exist_ok=True, parents=True)
         output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
+        reader.SetFileNames(filepaths)
+        image = reader.Execute()
+        log.error(
+            f"orientation: {DICOMOrientImageFilter_GetOrientationFromDirectionCosines(image.GetDirection())}"
+        )
+        WriteImage(image, output_filepath)
+        log.info(f"written {series_uid} DICOM as NifTI")
+        # tmp_dir = Path(output_study_dir, f"tmp_{series_uid}")
+        # tmp_dir.mkdir(exist_ok=True, parents=True)
+        # [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
 
-        tmp_dir = Path(output_study_dir, f"tmp_{series_uid}")
-        tmp_dir.mkdir(exist_ok=True, parents=True)
-        [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
+        # if output_filepath.exists():
+        #     log.debug(
+        #         f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
+        #     )
 
-        if output_filepath.exists():
-            log.debug(
-                f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
-            )
-
-        try:
-            args = [
-                "-o",
-                str(output_series_dir),
-                "-f",
-                "input_ct_volume",
-                "-z",
-                "y",
-                "-b",
-                "n",
-                "-w",
-                "1",
-                str(tmp_dir),
-            ]
-            returncode = dcm2niix.main(args, capture_output=True, text=True)
-            shutil.rmtree(tmp_dir)
-        except RuntimeError as err:
-            log.error(err)
-        log.debug(f"finished NifTI conversion with {returncode=}\n")
+        # try:
+        #     args = [
+        #         "-o",
+        #         str(output_series_dir),
+        #         "-f",
+        #         "input_ct_volume",
+        #         "-z",
+        #         "y",
+        #         "-b",
+        #         "n",
+        #         "-w",
+        #         "1",
+        #         str(tmp_dir),
+        #     ]
+        #     returncode = dcm2niix.main(args, capture_output=True, text=True)
+        #     shutil.rmtree(tmp_dir)
+        # except RuntimeError as err:
+        #     log.error(err)
+        # log.debug(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
