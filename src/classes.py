@@ -18,7 +18,7 @@ log = logging.getLogger("classes")
 @dataclass
 class SeriesData:
     series_inst_uid: str
-    description: str | None = None
+    series_description: str | None = None
     filepaths: list[Path] = field(default_factory=list, repr=False)
     filepaths_num: int | None = field(default=None, repr=False)
     slice_thickness: float | None = field(default=None, repr=False)
@@ -122,6 +122,7 @@ class StudyData:
         _study = {
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
+            "patient_height": self.patient_height,
             # "study_date": self.study_date,
         }
         return [_study | series._to_dict() for series in self.series.values()]
