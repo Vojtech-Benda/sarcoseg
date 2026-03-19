@@ -97,6 +97,24 @@ def postprocess_tissue_masks(
 
     # copy the mask for in place modification without affecting original mask
     mask = sitk.Image(mask_data.image)
+    log.info(f"mask: {mask.GetOrigin()}, vol: {volume_data.image.GetOrigin()}")
+
+    # resample mask into the same physical space as tissue
+    if not (mask.GetOrigin() == volume_data.image.GetOrigin()):
+        log.debug(
+            "mask and tissue images are not in the same physical space, resampling..."
+        )
+        mask = sitk.Resample(
+            mask,
+            referenceImage=volume_data.image,
+            interpolator=sitk.sitkNearestNeighbor,
+            defaultPixelValue=0,
+            outputPixelType=mask.GetPixelID(),
+        )
+
+    log.info(f"mask: {mask.GetOrigin()}, vol: {volume_data.image.GetOrigin()}")
+
+    # verify that mask and tissue are in the same physical space
 
     imat_thresh = (imat_hu_range[0] <= volume_data.image <= imat_hu_range[1]) & (
         mask == DEFAULT_TISSUE_CLASSES["muscle"]
