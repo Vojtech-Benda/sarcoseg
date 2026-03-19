@@ -4,11 +4,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import coloredlogs
-
 from src import preprocessing, segmentation, utils
 from src.classes import ProcessResult, Report, StudyData
 from src.network import database, pacs
+from src.slogger import setup_logger
 
 
 def get_args():
@@ -65,11 +64,12 @@ def get_args():
 def main(args: argparse.Namespace):
     debug = args.debug
 
-    coloredlogs.install(
-        level="DEBUG" if args.debug else "INFO",
-        fmt="%(name)s-%(levelname)s-%(message)s",
-    )
+    # coloredlogs.install(
+    #     level="DEBUG" if args.debug else "INFO",
+    #     fmt="%(name)s-%(levelname)s-%(message)s",
+    # )
 
+    setup_logger(debug)
     log = logging.getLogger("sarcoseg")
     # main_logger = slogger.get_logger(__name__)
 
@@ -83,7 +83,7 @@ def main(args: argparse.Namespace):
         sys.exit(-1)
 
     finished_study_uids = labkey_api.exclude_finished_studies(
-        participant_list.study_instance_uid.to_list()
+        participant_list["STUDY_INSTANCE_UID"].to_list()
     )
 
     queried_study_cases: list[StudyData] = labkey_api._select_rows(
