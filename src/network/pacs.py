@@ -63,7 +63,6 @@ class PacsAPI:
             str(response_dir),
         ]
         result = subprocess.run(args_findscu, capture_output=True, text=True)
-        print(f"findscu {result.returncode=}")
         if result.returncode == -1:
             return result.returncode
 
@@ -87,7 +86,7 @@ class PacsAPI:
 
             query_series.append(series_uid)
 
-        # clean the download directory
+        # clean the response directory
         shutil.rmtree(response_dir)
 
         args = [

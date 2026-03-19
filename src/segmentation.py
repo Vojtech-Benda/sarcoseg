@@ -196,7 +196,6 @@ def segment_tissues(
     log.debug(f"starting tissue segmentation for {tissue_volume_path.name}")
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
-    print(f"{tissue_volume_path=}")
     start = perf_counter()
     tissue_predictor.predict_from_files(
         list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
