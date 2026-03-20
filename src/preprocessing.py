@@ -37,6 +37,7 @@ CONTRAST_PHASES_PATTERN = re.compile(
 )
 
 LAS_ORNT = nib.orientations.axcodes2ornt(("L", "A", "S"))
+RAS_ORNT = nib.orientations.axcodes2ornt(("R", "A", "S"))
 
 
 def preprocess_dicom_study(
@@ -119,7 +120,7 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
             continue
 
         image = nib.load(output_filepath)
-        image = image.as_reoriented(LAS_ORNT)
+        image = image.as_reoriented(RAS_ORNT)
         nib.save(image, output_filepath)
         log.debug(f"finished NifTI conversion with {returncode=}")
 
