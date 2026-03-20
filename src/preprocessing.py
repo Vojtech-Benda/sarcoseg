@@ -8,11 +8,6 @@ from statistics import mean
 import dcm2niix
 import nibabel as nib
 import pydicom
-from SimpleITK import (
-    DICOMOrientImageFilter_GetOrientationFromDirectionCosines,
-    ImageSeriesReader,
-    WriteImage,
-)
 
 # from src import slogger
 from src.classes import SeriesData, StudyData
@@ -85,7 +80,6 @@ def preprocess_dicom_study(
 
 
 def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
-    reader = ImageSeriesReader()
 
     for series_uid, filepaths in series.items():
         log.debug(f"converting {series_uid=} DICOM volume as NifTI")
@@ -225,7 +219,7 @@ def select_series_to_segment(
 
         series_data = SeriesData(
             series_inst_uid=series_uid,
-            description=series_desc,
+            series_description=series_desc,
             slice_thickness=float(dataset.get("SliceThickness", -1.0)),
             filepaths=filepaths,
             filepaths_num=len(filepaths),
