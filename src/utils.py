@@ -1,12 +1,12 @@
-import json
 import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
+import nibabel as nib
+import numpy as np
 import pandas as pd
-import SimpleITK as sitk
+import skimage as sk
 
 from src.classes import Centroids, ImageData, MetricsData, Nifti1Image
 
@@ -28,6 +28,13 @@ DEFAULT_TISSUE_CLASSES: dict[str, int] = {
     "imat": 4,
 }
 
+DEFAULT_TISSUE_CLASSES_INV: dict[int, str] = {
+    1: "muscle",
+    2: "sat",
+    3: "vat",
+    4: "imat",
+}
+
 TISSUE_LABEL_INDEX = list(DEFAULT_TISSUE_CLASSES.keys())
 
 TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
@@ -40,7 +47,7 @@ TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
 log = logging.getLogger("utils")
 
 
-def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
+def get_vertebrae_body_centroids(mask: Nifti1Image, l3_label: int) -> Centroids:
     """
     Get vertebrae's body centroid coordinates in pixel space.
 
@@ -56,32 +63,27 @@ def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
             Vertebrae centroid in voxel space.
     """
 
-    label_filt = sitk.LabelShapeStatisticsImageFilter()
-    label_filt.Execute(mask)
+    l3_mask = mask.get_fdata().astype(np.uint8) == l3_label
 
-    # check if L3 has been segmented!!
-    if l3_label not in label_filt.GetLabels():
+    # check if L3 mask is present!!
+    if not l3_mask.any():
         log.warning("no L3 mask label found")
         return Centroids()
 
     # get the whole L3 vertebrae centroid
     # centroid index = [sagittal, coronal, axial]
-    vert_centroid = mask.TransformPhysicalPointToIndex(label_filt.GetCentroid(l3_label))
+    vert_centroid = np.rint(sk.measure.centroid(l3_mask)).astype(np.uint16)
+    relabeled_vert_parts = sk.measure.label(l3_mask[vert_centroid[0], ...])
 
-    # relabel the whole L3 vertebrae in sagittal view
-    # label object size sorted descending order
-    relabeled_vert_parts = sitk.RelabelComponent(
-        sitk.ConnectedComponent(mask[vert_centroid[0], ...] == l3_label),
-        sortByObjectSize=True,
+    # L3 vertebrae body label should always be bigger (more number of pixels)
+    # than L3 spinal process label in sagittal view at L3 whole vertebrae center
+    label_props = sorted(
+        sk.measure.regionprops(relabeled_vert_parts),
+        key=lambda x: x["num_pixels"],
+        reverse=True,
     )
-
-    # label of vertebrae body is 1 due to descending sorting by size
-    label_filt.Execute(relabeled_vert_parts)
-    body_centroid = relabeled_vert_parts.TransformPhysicalPointToIndex(
-        label_filt.GetCentroid(1)
-    )
-
-    return Centroids(vert_centroid, body_centroid)
+    body_centroid = np.rint(label_props[0]["centroid"]).astype(np.uint16)
+    return Centroids(vert_centroid.tolist(), body_centroid.tolist())
 
 
 def postprocess_tissue_masks(
@@ -94,44 +96,38 @@ def postprocess_tissue_masks(
     vat_hu_range = TISSUE_HU_RANGES["vat"]
 
     # copy the mask for in place modification without affecting original mask
-    mask = sitk.Image(mask_data.image)
-    log.info(f"mask: {mask.GetOrigin()}, vol: {volume_data.image.GetOrigin()}")
+    tissue_arr = volume_data.image.get_fdata()
+    mask_arr = mask_data.image.get_fdata().copy()
 
-    # resample mask into the same physical space as tissue
-    if not (mask.GetOrigin() == volume_data.image.GetOrigin()):
-        log.debug(
-            "mask and tissue images are not in the same physical space, resampling..."
-        )
-        mask = sitk.Resample(
-            mask,
-            referenceImage=volume_data.image,
-            interpolator=sitk.sitkNearestNeighbor,
-            defaultPixelValue=0,
-            outputPixelType=mask.GetPixelID(),
-        )
+    imat_thresh = np.logical_and(
+        tissue_arr >= imat_hu_range[0], tissue_arr <= imat_hu_range[1]
+    ) & (mask_arr == DEFAULT_TISSUE_CLASSES["muscle"])
 
-    log.info(f"mask: {mask.GetOrigin()}, vol: {volume_data.image.GetOrigin()}")
+    footprint = sk.morphology.ball(1)
 
-    # verify that mask and tissue are in the same physical space
-
-    imat_thresh = (imat_hu_range[0] <= volume_data.image <= imat_hu_range[1]) & (
-        mask == DEFAULT_TISSUE_CLASSES["muscle"]
+    imat_thresh = sk.morphology.remove_small_objects(
+        sk.morphology.opening(imat_thresh, footprint), max_size=6
     )
-    imat_thresh = sitk.BinaryOpeningByReconstruction(imat_thresh)
-    mask[imat_thresh] = DEFAULT_TISSUE_CLASSES["imat"]
+    mask_arr[imat_thresh] = DEFAULT_TISSUE_CLASSES["imat"]
 
-    non_vat_thresh = (volume_data.image > vat_hu_range[1]) * (
-        mask == DEFAULT_TISSUE_CLASSES["vat"]
+    non_vat_thresh = (tissue_arr > vat_hu_range[1]) * (
+        mask_arr == DEFAULT_TISSUE_CLASSES["vat"]
     )
-    non_vat_thresh = sitk.BinaryOpeningByReconstruction(non_vat_thresh)
-    mask[non_vat_thresh] = 0
+    non_vat_thresh = sk.morphology.remove_small_objects(
+        sk.morphology.opening(non_vat_thresh, footprint), max_size=6
+    )
+    mask_arr[non_vat_thresh] = 0
 
     processed_mask_path = mask_data.path.parent.joinpath("tissue_mask_pp.nii.gz")
-    sitk.WriteImage(mask, processed_mask_path)
+
+    processed_mask = nib.Nifti1Image(
+        mask_arr, affine=mask_data.image.affine, dtype=mask_arr.dtype
+    )
+    nib.save(processed_mask, processed_mask_path)
 
     duration = perf_counter() - start
     log.info(f"tissue postprocessing finished in {duration:.4f} second")
-    return ImageData(image=mask, path=processed_mask_path), duration
+    return ImageData(image=processed_mask, path=processed_mask_path), duration
 
 
 def compute_metrics(
@@ -155,26 +151,21 @@ def compute_metrics(
     Returns:
         metrics (MetricsData): Computed metrics with cross-sectional area, mean HU and skeletal muscle index.
     """
-    mask_image = tissue_mask_data.image
-    tissue_image = tissue_volume_data.image
+    mask_arr = tissue_mask_data.image.get_fdata().astype(np.uint8)
+    tissue_arr = tissue_volume_data.image.get_fdata()
+    spacing = np.array(tissue_mask_data.image.header.get_zooms())
 
-    if mask_image.GetSize()[-1] == 1:
+    if len(mask_arr.shape) == 3 and mask_arr.shape[-1] == 1:
         # 3D array to 2D array only for metrics
-        mask_image = mask_image[..., 0]
-        tissue_image = tissue_image[..., 0]
+        mask_arr = mask_arr[..., 0]
+        tissue_arr = tissue_arr[..., 0]
+        spacing = spacing[:-1]
 
-    stats_filt = sitk.LabelIntensityStatisticsImageFilter()
-    stats_filt.Execute(mask_image, tissue_image)
+    props = sk.measure.regionprops(mask_arr, tissue_arr, spacing=spacing)
 
     # divide by 100 to convert from mm2 to cm2
-    area = {
-        tissue: stats_filt.GetPhysicalSize(label) / 100.0
-        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
-    }
-    mean_hu = {
-        tissue: stats_filt.GetMean(label)
-        for tissue, label in DEFAULT_TISSUE_CLASSES.items()
-    }
+    area = {DEFAULT_TISSUE_CLASSES_INV[p.label]: p.area / 100.0 for p in props}
+    mean_hu = {DEFAULT_TISSUE_CLASSES_INV[p.label]: p.intensity_mean for p in props}
 
     smi = 0.0
     if patient_height:
@@ -213,10 +204,11 @@ def read_patient_list(
     return df
 
 
-def read_volume(path: Path | str, orientation: str | None) -> ImageData:
-    image = sitk.ReadImage(path)
+def read_volume(path: Path | str, orientation: str | None = None) -> ImageData:
+    image = nib.load(path)
     if orientation:
-        image = sitk.DICOMOrient(image, orientation)
+        ornt = nib.orientations.axcodes2ornt([char for char in orientation])
+        image = image.as_reoriented(ornt)
     return ImageData(image, Path(path))
 
 

@@ -6,12 +6,10 @@ from pathlib import Path
 from typing import Any, Self
 
 import pandas as pd
-from SimpleITK import Image
+from nibabel import Nifti1Image
 
-# from src import slogger
 from src.io import read_json
 
-# logger = slogger.get_logger(__name__)
 log = logging.getLogger("classes")
 
 
@@ -130,7 +128,7 @@ class StudyData:
 
 @dataclass
 class ImageData:
-    image: Image
+    image: Nifti1Image
     path: Path
 
 
@@ -141,15 +139,24 @@ class Centroids:
 
 
 @dataclass
+class ProcessDurations:
+    spine_seg: int | float = 0.0
+    tissue_seg: int | float = 0.0
+    slice_extraction: int | float = 0.0
+    postprocessing: int | float = 0.0
+
+
+@dataclass
 class MetricsData:
     area: dict[str, Any]
     mean_hu: dict[str, Any]
-    skelet_muscle_index: float | None = None
+    skelet_muscle_index: float | None = 0.0
 
     series_inst_uid: str | None = None
     contrast_phase: str | None = None
 
-    duration: float | None = None
+    process_durations: ProcessDurations | None = field(default_factory=ProcessDurations)
+    total_duration: float | None = 0.0
     centroids: Centroids = field(default_factory=Centroids)
 
     def _to_dict(self) -> dict[str, Any]:
@@ -159,14 +166,15 @@ class MetricsData:
                 "series_inst_uid": self.series_inst_uid,
                 "contrast_phase": self.contrast_phase,
                 "skelet_muscle_index": self.skelet_muscle_index,
-                "duration": self.duration,
+                "total_duration": self.total_duration,
             }
             | {f"area_{label}": self.area[label] for label in tissue_labels}
             | {f"mean_hu_{label}": self.mean_hu[label] for label in tissue_labels}
         )
 
-    def set_duration(self, *durations):
-        self.duration = sum(durations)
+    def set_durations(self, durations: ProcessDurations):
+        self.process_durations = durations
+        self.total_duration = sum(durations.__dict__.values())
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> Self:
@@ -176,7 +184,8 @@ class MetricsData:
             skelet_muscle_index=d.get("skelet_muscle_index"),
             series_inst_uid=d.get("series_inst_uid"),
             contrast_phase=d.get("contrast_phase"),
-            duration=d.get("duration"),
+            process_durations=d.get("process_durations"),
+            total_duration=d.get("total_duration"),
             centroids=Centroids(
                 d.get("vertebre_centroid", []), d.get("body_centroid", [])
             ),

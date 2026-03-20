@@ -3,13 +3,15 @@ import subprocess
 from pathlib import Path
 from time import perf_counter
 
-import SimpleITK as sitk
+import nibabel as nib
+from nibabel import Nifti1Image
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
 from src import utils, visualization
 from src.classes import (
     Centroids,
     ImageData,
+    ProcessDurations,
     ProcessResult,
     SegmentationResult,
     StudyData,
@@ -55,7 +57,7 @@ def segment_ct_study(
             series_filepath, series_output_dir
         )
 
-        input_volume_data: ImageData = utils.read_volume(series_filepath, "LPI")
+        input_volume_data: ImageData = utils.read_volume(series_filepath)
         slice_extraction_result = extract_slices(
             input_volume_data.image,
             spine_mask_data.image,
@@ -88,9 +90,12 @@ def segment_ct_study(
             patient_height=study_case.patient_height,
         )
 
-        metrics.set_duration(
-            spine_duration, tissue_duration, extraction_duration, postproc_duration
+        metrics.set_durations(
+            ProcessDurations(
+                spine_duration, tissue_duration, extraction_duration, postproc_duration
+            )
         )
+
         metrics.centroids = centroids
         metrics.series_inst_uid = series_inst_uid
         metrics.contrast_phase = study_case.series[series_inst_uid].contrast_phase
@@ -181,7 +186,7 @@ def segment_spine(
     duration = perf_counter() - start
     log.info(f"spine segmentation finised in {duration:.4f} seconds")
 
-    return utils.read_volume(spine_mask_path, "LPI"), duration
+    return utils.read_volume(spine_mask_path), duration
 
 
 def segment_tissues(
@@ -204,12 +209,12 @@ def segment_tissues(
     duration = perf_counter() - start
     log.info(f"tissue segmentation finished in {duration:.4f} seconds")
 
-    return utils.read_volume(output_filepath, "LPI"), duration
+    return utils.read_volume(output_filepath), duration
 
 
 def extract_slices(
-    ct_volume: sitk.Image | Path | str,
-    spine_mask: sitk.Image | Path | str,
+    ct_volume: Nifti1Image,
+    spine_mask: Nifti1Image,
     output_dir: Path | str,
     slices_num: int = 0,
 ) -> tuple[ImageData, Centroids, float] | None:
@@ -232,12 +237,12 @@ def extract_slices(
         - **centroids** (Centroids): Indexes of whole L3 vertebrae centroid and L3 vertebrae body centroid.
         - **duration** (float): Duration of segmentation.
     """
-    if not isinstance(spine_mask, sitk.Image):
+    if not isinstance(spine_mask, Nifti1Image):
         raise TypeError(
             f"spine_mask should be of type sitk.Image, not `{type(spine_mask)}`"
         )
 
-    if not isinstance(ct_volume, sitk.Image):
+    if not isinstance(ct_volume, Nifti1Image):
         raise TypeError(
             f"ct_volume should be of type sitk.Image, not `{type(ct_volume)}`"
         )
@@ -252,7 +257,7 @@ def extract_slices(
         return None
 
     # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
-    tissue_slice = ct_volume[
+    tissue_slice = ct_volume.slicer[
         ..., centroids.body_centroid[1] : centroids.body_centroid[1] + 1
     ]
 
@@ -260,8 +265,7 @@ def extract_slices(
     if output_filepath.exists():
         log.debug(f"file `{output_filepath}` exists, overwriting")
 
-    sitk.WriteImage(tissue_slice, output_filepath)
-
+    nib.save(tissue_slice, output_filepath)
     duration = perf_counter() - start
     log.info(f"slice extraction finished in {duration:.4f} seconds")
 
