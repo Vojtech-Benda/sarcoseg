@@ -8,8 +8,7 @@ from time import perf_counter
 import pandas as pd
 import SimpleITK as sitk
 
-# from src import slogger
-from src.classes import Centroids, ImageData, MetricsData, StudyData
+from src.classes import Centroids, ImageData, MetricsData, Nifti1Image
 
 log = logging.getLogger("utils")
 
@@ -38,7 +37,6 @@ TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
 }
 
 
-# logger = slogger.get_logger(__name__)
 log = logging.getLogger("utils")
 
 
@@ -230,44 +228,3 @@ def remove_empty_segmentation_dir(dirpath: str | Path):
 def remove_dicom_dir(dirpath: str | Path):
     log.debug(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
-
-
-def make_report(
-    requested_study_cases: list[StudyData],
-    output_dir: Path,
-    timestamp: str | None = None,
-    verbose: bool = False,
-):
-    if not timestamp:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    study_dirs = list(output_dir.glob("*"))
-    missing_studies = [
-        {"participant": pat.participant, "study_instance_uid": pat.study_inst_uid}
-        for pat in requested_study_cases
-        if output_dir.joinpath(pat.study_inst_uid) not in study_dirs
-    ]
-
-    finished_studies = [
-        {
-            "participant": pat.participant,
-            "study_inst_uid": pat.study_inst_uid,
-            "preprocessed_count": len(list(study_dir.rglob("input_ct_volume.nii.gz"))),
-            "segmentated_count": len(list(study_dir.rglob("tissue_mask.nii.gz"))),
-        }
-        for pat in requested_study_cases
-        if (study_dir := output_dir.joinpath(pat.study_inst_uid)).exists()
-    ]
-
-    report = {
-        "timestamp": timestamp,
-        "output_directory": str(output_dir.resolve()),
-        "finished_studies": finished_studies,
-        "missing_studies": missing_studies,
-    }
-
-    report_path = output_dir.joinpath(f"report_{timestamp}.json")
-    with open(report_path, "w") as file:
-        json.dump(report, file, indent=4)
-
-    log.debug(f"Segmentation report written to `{report_path}`")

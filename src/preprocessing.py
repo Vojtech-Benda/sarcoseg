@@ -9,10 +9,8 @@ import dcm2niix
 import nibabel as nib
 import pydicom
 
-# from src import slogger
 from src.classes import SeriesData, StudyData
 
-# logger = slogger.get_logger(__name__)
 log = logging.getLogger("preprocess")
 
 SERIES_DESC_PATTERN = re.compile(

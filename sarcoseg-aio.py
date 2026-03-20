@@ -64,14 +64,8 @@ def get_args():
 def main(args: argparse.Namespace):
     debug = args.debug
 
-    # coloredlogs.install(
-    #     level="DEBUG" if args.debug else "INFO",
-    #     fmt="%(name)s-%(levelname)s-%(message)s",
-    # )
-
     setup_logger(debug)
     log = logging.getLogger("sarcoseg")
-    # main_logger = slogger.get_logger(__name__)
 
     participant_list = utils.read_patient_list(
         args.participant_list, columns=["PARTICIPANT", "STUDY_INSTANCE_UID"]
@@ -79,7 +73,6 @@ def main(args: argparse.Namespace):
 
     labkey_api = database.LabkeyAPI.init_from_json(debug=debug)
     if not labkey_api.is_labkey_reachable():
-        # log.critical("labkey is unreachable")
         sys.exit(-1)
 
     finished_study_uids = labkey_api.exclude_finished_studies(
@@ -114,6 +107,7 @@ def main(args: argparse.Namespace):
 
     report = Report(timestamp)
 
+    log.info(f"preprocessing and segmenting {len(queried_study_cases)} cases")
     for study_case in queried_study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
@@ -178,7 +172,6 @@ def main(args: argparse.Namespace):
             )
 
         if args.upload_labkey:
-            # TEST:
             study_case_list = study_case._to_list_of_dicts()
             if study_case_list:
                 labkey_api._upload_data(
@@ -191,7 +184,6 @@ def main(args: argparse.Namespace):
                     f"case {study_case.participant}, study {study_case.study_inst_uid} has no DICOM data to send to labkey"
                 )
 
-            # TEST:
             segmentation_result_list = segmentation_result._to_list_of_dicts()
             if segmentation_result_list:
                 labkey_api._upload_data(
@@ -211,7 +203,6 @@ def main(args: argparse.Namespace):
         utils.remove_empty_segmentation_dir(output_dir)
 
     report.write_report(output_dir)
-    # utils.make_report(queried_study_cases, output_dir, timestamp)
 
 
 if __name__ == "__main__":

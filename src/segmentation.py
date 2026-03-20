@@ -14,11 +14,8 @@ from src.classes import (
     SegmentationResult,
     StudyData,
 )
-
-# from src.slogger import get_logger
 from src.utils import DEFAULT_VERTEBRA_CLASSES
 
-# logger = get_logger(__name__)
 log = logging.getLogger("segment")
 
 tissue_predictor = nnUNetPredictor()
@@ -41,7 +38,7 @@ def segment_ct_study(
         )
 
     series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
-    # logger.info("-" * 25)
+
     log.debug(
         f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
     )
@@ -203,7 +200,6 @@ def segment_tissues(
         num_processes_preprocessing=8,
         num_processes_segmentation_export=8,
     )
-    # log.debug(f"nnUNet finished `{tissue_volume_path}`")
 
     duration = perf_counter() - start
     log.info(f"tissue segmentation finished in {duration:.4f} seconds")
