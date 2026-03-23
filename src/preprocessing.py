@@ -117,8 +117,10 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
             log.error(err)
             continue
 
-        image = nib.load(output_filepath)
-        image = image.as_reoriented(RAS_ORNT)
+        image = nib.as_closest_canonical(nib.load(output_filepath))
+        # orig_ornt = nib.io_orientation(image.affine)
+        # transform = nib.orientations.ornt_transform(orig_ornt, RAS_ORNT)
+        # image = image.as_reoriented(transform)
         nib.save(image, output_filepath)
         log.debug(f"finished NifTI conversion with {returncode=}")
 
