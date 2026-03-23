@@ -10,6 +10,7 @@ import nibabel as nib
 import pydicom
 
 from src.classes import SeriesData, StudyData
+from src.utils import read_volume
 
 log = logging.getLogger("preprocess")
 
@@ -34,8 +35,8 @@ CONTRAST_PHASES_PATTERN = re.compile(
     r"|".join(("abdomen", "arterial", "nephro", "venous")), re.IGNORECASE
 )
 
-LAS_ORNT = nib.orientations.axcodes2ornt(("L", "A", "S"))
-RAS_ORNT = nib.orientations.axcodes2ornt(("R", "A", "S"))
+# LAS_ORNT = nib.orientations.axcodes2ornt(("L", "A", "S"))
+# RAS_ORNT = nib.orientations.axcodes2ornt(("R", "A", "S"))
 
 
 def preprocess_dicom_study(
@@ -117,10 +118,7 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
             log.error(err)
             continue
 
-        image = nib.as_closest_canonical(nib.load(output_filepath))
-        # orig_ornt = nib.io_orientation(image.affine)
-        # transform = nib.orientations.ornt_transform(orig_ornt, RAS_ORNT)
-        # image = image.as_reoriented(transform)
+        image = read_volume(output_filepath).image
         nib.save(image, output_filepath)
         log.debug(f"finished NifTI conversion with {returncode=}")
 

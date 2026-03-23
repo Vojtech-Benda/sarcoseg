@@ -44,9 +44,6 @@ TISSUE_HU_RANGES: dict[str, tuple[int, int]] = {
 }
 
 
-log = logging.getLogger("utils")
-
-
 def get_vertebrae_body_centroids(mask: Nifti1Image, l3_label: int) -> Centroids:
     """
     Get vertebrae's body centroid coordinates in pixel space.
@@ -204,11 +201,19 @@ def read_patient_list(
     return df
 
 
-def read_volume(path: Path | str, orientation: str | None = None) -> ImageData:
+def read_volume(path: Path | str, orientation: str | None = "RAS") -> ImageData:
     image = nib.load(path)
+    log.debug(f"transforming loaded image into {orientation} orientation")
     if orientation:
-        ornt = nib.orientations.axcodes2ornt([char for char in orientation])
-        image = image.as_reoriented(ornt)
+        print(f"transforming loaded image into {orientation} orientation")
+        if orientation == "RAS":
+            image = nib.as_closest_canonical(image)
+        else:
+            orig_ornt = nib.io_orientation(image.affine)
+            transform = nib.orientations.ornt_transform(
+                orig_ornt, nib.orientations.axcodes2ornt(orientation)
+            )
+            image = image.as_reoriented(transform)
     return ImageData(image, Path(path))
 
 
