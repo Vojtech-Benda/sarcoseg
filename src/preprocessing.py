@@ -32,7 +32,19 @@ SERIES_DESC_PATTERN = re.compile(
     re.IGNORECASE,
 )
 CONTRAST_PHASES_PATTERN = re.compile(
-    r"|".join(("abdomen", "arterial", "nephro", "venous")), re.IGNORECASE
+    r"|".join(
+        (
+            "abdomen",
+            "arterial",
+            "nephro",
+            "venous",
+            "thorax",
+            "angio",
+            "aorta",
+            "aortic",
+        )
+    ),
+    re.IGNORECASE,
 )
 
 # LAS_ORNT = nib.orientations.axcodes2ornt(("L", "A", "S"))
