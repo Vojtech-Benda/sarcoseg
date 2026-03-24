@@ -203,9 +203,10 @@ def read_patient_list(
 
 def read_volume(path: Path | str, orientation: str | None = "RAS") -> ImageData:
     image = nib.load(path)
-    log.debug(f"transforming loaded image into {orientation} orientation")
     if orientation:
-        print(f"transforming loaded image into {orientation} orientation")
+        log.debug(
+            f"transforming loaded image orientation from {nib.aff2axcodes(image.affine)} into {orientation} orientation"
+        )
         if orientation == "RAS":
             image = nib.as_closest_canonical(image)
         else:
