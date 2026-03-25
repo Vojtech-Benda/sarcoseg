@@ -9,6 +9,7 @@ import pandas as pd
 from nibabel import Nifti1Image
 
 from src.io import read_json
+from src.labels import DEFAULT_TISSUE_CLASSES
 
 log = logging.getLogger("classes")
 
@@ -160,7 +161,7 @@ class MetricsData:
     centroids: Centroids = field(default_factory=Centroids)
 
     def _to_dict(self) -> dict[str, Any]:
-        tissue_labels = self.area.keys()
+        tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
         return (
             {
                 "series_inst_uid": self.series_inst_uid,

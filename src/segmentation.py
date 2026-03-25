@@ -16,7 +16,7 @@ from src.classes import (
     SegmentationResult,
     StudyData,
 )
-from src.utils import DEFAULT_VERTEBRA_CLASSES
+from src.labels import DEFAULT_VERTEBRA_CLASSES
 
 log = logging.getLogger("segment")
 
