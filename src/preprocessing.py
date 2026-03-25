@@ -48,7 +48,6 @@ CONTRAST_PHASES_PATTERN = re.compile(
             "nephro",
             "venous",
             "thorax",
-            "angio",
             "aorta",
             "aortic",
         )
