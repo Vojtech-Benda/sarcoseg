@@ -297,7 +297,7 @@ class StudySegmentationResult:
 
         for uid, result in self.series_results.items():
             results = {
-                "result": result.status.value
+                "status": result.status.value
                 if isinstance(result.status, ProcessResult)
                 else result.status,
                 "series_inst_uid": result.series_inst_uid,
