@@ -233,7 +233,6 @@ def select_series_to_segment(
         # filter by words in SeriesDescription
         series_desc: str = dataset.SeriesDescription
 
-        contrast_applied = dataset.get("ContrastBolusAgent", None)
         convolution_kernel = dataset.get("ConvolutionKernel", None)
 
         series_data = SeriesData(
@@ -242,16 +241,22 @@ def select_series_to_segment(
             slice_thickness=float(dataset.get("SliceThickness", -1.0)),
             filepaths=filepaths,
             filepaths_num=len(filepaths),
-            has_contrast="yes" if contrast_applied else "no",
+            # has_contrast="yes" if contrast_applied else "no",
             irradiation_event_uid=dataset.get("IrradiationEventUID", "n/a"),
             convolution_kernel=convolution_kernel[0] if convolution_kernel else "n/a",
         )
 
-        # TODO: possibly remove!!
+        contrast_applied = dataset.get("ContrastBolusAgent", None)
+
         if contrast_match := CONTRAST_PHASES_PATTERN.search(series_desc):
-            series_data.contrast_phase = contrast_match.group().lower()
+            phase = contrast_match.group().lower()
+            series_data.contrast_phase = phase
+            series_data.has_contrast = (
+                "yes" if contrast_applied and phase != "abdomen" else "no"
+            )
         else:
             series_data.contrast_phase = "other"
+            series_data.has_contrast = "n/a"
 
         series_by_contrast[series_data.contrast_phase].append(series_data)
 
