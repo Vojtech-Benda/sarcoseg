@@ -127,6 +127,14 @@ class StudyData:
         return [_study | series._to_dict() for series in self.series.values()]
 
 
+class ProcessResult(enum.Enum):
+    NONE = "NONE"
+    MISSING_L3_MASK = "MISSING_L3_MASK"
+    SEGMENTATION_FINISHED = "SEGMENTATION_FINISHED"
+    MISSING_ON_PACS_OR_LOCAL = "MISSING_ON_PACS_OR_LOCAl"
+    NO_SERIES_TO_SEGMENT = "NO_SERIES_TO_SEGMENT"
+
+
 @dataclass
 class ImageData:
     image: Nifti1Image
@@ -148,15 +156,12 @@ class ProcessDurations:
 
 
 @dataclass
-class MetricsData:
-    area: dict[str, Any]
-    mean_hu: dict[str, Any]
+class Metrics:
+    area: dict[str, Any] = field(default_factory=dict)
+    mean_hu: dict[str, Any] = field(default_factory=dict)
     skelet_muscle_index: float | None = 0.0
 
-    series_inst_uid: str | None = None
-    contrast_phase: str | None = None
-
-    process_durations: ProcessDurations | None = field(default_factory=ProcessDurations)
+    process_durations: ProcessDurations = field(default_factory=ProcessDurations)
     total_duration: float | None = 0.0
     centroids: Centroids = field(default_factory=Centroids)
 
@@ -164,13 +169,11 @@ class MetricsData:
         tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
         return (
             {
-                "series_inst_uid": self.series_inst_uid,
-                "contrast_phase": self.contrast_phase,
                 "skelet_muscle_index": self.skelet_muscle_index,
                 "total_duration": self.total_duration,
             }
-            | {f"area_{label}": self.area[label] for label in tissue_labels}
-            | {f"mean_hu_{label}": self.mean_hu[label] for label in tissue_labels}
+            | {f"area_{label}": self.area.get(label) for label in tissue_labels}
+            | {f"mean_hu_{label}": self.mean_hu.get(label) for label in tissue_labels}
         )
 
     def set_durations(self, durations: ProcessDurations):
@@ -183,8 +186,6 @@ class MetricsData:
             area=d.get("area", {}),
             mean_hu=d.get("mean_hu", {}),
             skelet_muscle_index=d.get("skelet_muscle_index"),
-            series_inst_uid=d.get("series_inst_uid"),
-            contrast_phase=d.get("contrast_phase"),
             process_durations=d.get("process_durations"),
             total_duration=d.get("total_duration"),
             centroids=Centroids(
@@ -193,20 +194,34 @@ class MetricsData:
         )
 
 
-class ProcessResult(enum.Enum):
-    MISSING_L3_MASK = "MISSING_L3_MASK"
-    SEGMENTATION_FINISHED = "SEGMENTATION_FINISHED"
-    MISSING_ON_PACS_OR_LOCAL = "MISSING_ON_PACS_OR_LOCAl"
-    NO_SERIES_TO_SEGMENT = "NO_SERIES_TO_SEGMENT"
+@dataclass
+class SeriesSegmentationResult:
+    series_inst_uid: str
+    status: ProcessResult = field(default=ProcessResult.NONE)
+    contrast_phase: str | None = None
+    metrics: Metrics | None = field(default=None)
 
 
 @dataclass
-class SegmentationResult:
+class StudySegmentationResult:
     participant: str
     study_inst_uid: str
     patient_height: float | None = None
-    metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
-    series_process_result: dict[str, ProcessResult | str] = field(default_factory=dict)
+    series_results: dict[str, SeriesSegmentationResult] = field(default_factory=dict)
+
+    def add_result(self, result: SeriesSegmentationResult):
+        if not result.metrics:
+            log.warning(f"metrics for {result.series_inst_uid} is None")
+        if result.status is ProcessResult.NONE:
+            log.warning(
+                f"result status for {result.series_inst_uid} is {result.status}"
+            )
+
+        log.debug(
+            f"added series result {result.series_inst_uid} for study {self.study_inst_uid}"
+        )
+
+        self.series_results[result.series_inst_uid] = result
 
     @classmethod
     def _from_study_case(cls, study_data: StudyData) -> Self:
@@ -227,9 +242,12 @@ class SegmentationResult:
         #     exclude.update(exclude_fields)
 
         # TODO: temporary fix for unserializable ProcessResult
-        self.series_process_result = {
-            uid: value.value for uid, value in self.series_process_result.items()
-        }
+        for result in self.series_results.values():
+            result.status = (
+                result.status.value
+                if isinstance(result.status, ProcessResult)
+                else result.status
+            )
 
         serialized = asdict(
             self,
@@ -255,19 +273,42 @@ class SegmentationResult:
             participant=data.get("participant"),
             study_inst_uid=data.get("study_inst_uid"),
             patient_height=data.get("patient_height"),
-            metrics_dict={
-                uid: MetricsData._from_dict(metric)
-                for uid, metric in data.get("metrics_dict").items()
+            series_results={
+                uid: SeriesSegmentationResult(
+                    series_inst_uid=uid,
+                    status=ProcessResult(result.get("status")),
+                    contrast_phase=result.get("contrast_phase"),
+                    metrics=Metrics._from_dict(metrics)
+                    if (metrics := result.get("metrics"))
+                    else None,
+                )
+                for uid, result in data.get("series_results", {}).items()
             },
         )
 
     def _to_list_of_dicts(self) -> list[dict[str, Any]]:
-        _base_dict = {
+        study_base = {
             "participant": self.participant,
             "patient_height": self.patient_height,
             "study_inst_uid": self.study_inst_uid,
         }
-        return [_base_dict | metric._to_dict() for metric in self.metrics_dict.values()]
+
+        flattened_items = []
+
+        for uid, result in self.series_results.items():
+            results = {
+                "result": result.status.value
+                if isinstance(result.status, ProcessResult)
+                else result.status,
+                "series_inst_uid": result.series_inst_uid,
+            }
+            metrics = result.metrics._to_dict() if result.metrics else {}
+
+            combined = study_base | results | metrics
+
+            flattened_items.append(combined)
+
+        return flattened_items
 
 
 @dataclass

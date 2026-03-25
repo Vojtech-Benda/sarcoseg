@@ -13,8 +13,9 @@ from src.classes import (
     ImageData,
     ProcessDurations,
     ProcessResult,
-    SegmentationResult,
+    SeriesSegmentationResult,
     StudyData,
+    StudySegmentationResult,
 )
 from src.labels import DEFAULT_VERTEBRA_CLASSES
 
@@ -30,7 +31,7 @@ def segment_ct_study(
     input_dir: str | Path,
     output_dir: str | Path,
     study_case: StudyData | None = None,
-) -> SegmentationResult:
+) -> StudySegmentationResult:
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
 
@@ -45,11 +46,12 @@ def segment_ct_study(
         f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
     )
 
-    seg_result = SegmentationResult._from_study_case(study_case)
+    study_segmentation = StudySegmentationResult._from_study_case(study_case)
 
     for series_filepath in series_nifti_filepaths:
         series_output_dir = series_filepath.parent
         series_inst_uid = series_output_dir.parts[-1]
+        contrast_phase = study_case.series[series_inst_uid].contrast_phase
 
         log.info(f"running segmentation series {series_inst_uid}")
 
@@ -66,11 +68,15 @@ def segment_ct_study(
 
         if not slice_extraction_result:
             log.warning(
-                f"participant {seg_result.participant}, study {seg_result.study_inst_uid}, series {series_inst_uid} has no L3 mask"
+                f"participant {study_segmentation.participant}, study {study_segmentation.study_inst_uid}, series {series_inst_uid} has no L3 mask"
             )
-            seg_result.series_process_result[series_inst_uid] = (
-                ProcessResult.MISSING_L3_MASK
+
+            result = SeriesSegmentationResult(
+                series_inst_uid=series_inst_uid,
+                status=ProcessResult.MISSING_L3_MASK,
+                contrast_phase=contrast_phase,
             )
+            study_segmentation.add_result(result)
             continue
 
         tissue_volume_data, centroids, extraction_duration = slice_extraction_result
@@ -97,14 +103,14 @@ def segment_ct_study(
         )
 
         metrics.centroids = centroids
-        metrics.series_inst_uid = series_inst_uid
-        metrics.contrast_phase = study_case.series[series_inst_uid].contrast_phase
 
-        seg_result.metrics_dict[series_inst_uid] = metrics
-        seg_result.series_process_result[series_inst_uid] = (
-            ProcessResult.SEGMENTATION_FINISHED
+        result = SeriesSegmentationResult(
+            series_inst_uid=series_inst_uid,
+            status=ProcessResult.SEGMENTATION_FINISHED,
+            contrast_phase=contrast_phase,
+            metrics=metrics,
         )
-
+        study_segmentation.add_result(result)
         log.debug(f"segmentation finished for series {series_inst_uid}")
 
         case_images_dir = series_output_dir.joinpath("images")
@@ -123,9 +129,9 @@ def segment_ct_study(
         )
         log.debug("saved mask overlays")
 
-    seg_result._write_to_json(output_dir)
+    study_segmentation._write_to_json(output_dir)
     log.debug(f" {series_inst_uid}")
-    return seg_result
+    return study_segmentation
 
 
 def segment_spine(
