@@ -1,17 +1,16 @@
 import logging
 import re
-import shutil
+
+# import shutil
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
+from typing import Iterable
 
-import dcm2niix
+# import dcm2niix
+# import dicom2nifti
 import pydicom
-from SimpleITK import (
-    DICOMOrientImageFilter_GetOrientationFromDirectionCosines,
-    ImageSeriesReader,
-    WriteImage,
-)
+from SimpleITK import ImageSeriesReader, WriteImage
 
 # from src import slogger
 from src.classes import SeriesData, StudyData
@@ -50,12 +49,13 @@ def preprocess_dicom_study(
     if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
-    dicom_files = find_dicoms(input_dir)
+    dicom_file_dir = find_dicoms(input_dir)
 
-    if not dicom_files:
+    if not dicom_file_dir:
         log.warning(f"no DICOM files found in `{input_dir}`")
         return None
 
+    dicom_files, dicom_dir = dicom_file_dir
     log.debug(
         f"preprocessing DICOM files for case {study_case.participant}, study {study_case.study_inst_uid}"
     )
@@ -77,26 +77,31 @@ def preprocess_dicom_study(
     study_case._write_to_json(output_dir)
 
     write_series_as_nifti(
-        output_dir, {uid: series.filepaths for uid, series in study_case.series.items()}
+        dicom_dir,
+        output_dir,
+        study_case.series.keys(),
     )
 
 
-def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
+def write_series_as_nifti(
+    dicom_directory, output_study_dir: Path, series_uids: Iterable[str]
+):
     reader = ImageSeriesReader()
 
-    for series_uid, filepaths in series.items():
-        log.debug(f"converting {series_uid=} DICOM volume as NifTI")
+    for uid in series_uids:
+        log.debug(f"converting {uid} DICOM volume into NifTI")
 
-        output_series_dir = output_study_dir.joinpath(series_uid)
+        output_series_dir = output_study_dir.joinpath(uid)
         output_series_dir.mkdir(exist_ok=True, parents=True)
         output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
-        reader.SetFileNames(filepaths)
+
+        filenames = reader.GetGDCMSeriesFileNames(dicom_directory, uid)
+        reader.SetFileNames(filenames)
         image = reader.Execute()
-        log.error(
-            f"orientation: {DICOMOrientImageFilter_GetOrientationFromDirectionCosines(image.GetDirection())}"
-        )
         WriteImage(image, output_filepath)
-        log.info(f"written {series_uid} DICOM as NifTI")
+
+        log.info(f"written {uid} DICOM as NifTI")
+
         # tmp_dir = Path(output_study_dir, f"tmp_{series_uid}")
         # tmp_dir.mkdir(exist_ok=True, parents=True)
         # [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
@@ -105,6 +110,8 @@ def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]])
         #     log.debug(
         #         f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
         #     )
+
+        # dicom2nifti.dicom_series_to_nifti(tmp)
 
         # try:
         #     args = [
@@ -160,10 +167,11 @@ def filter_dicom_files(
                 "SeriesInstanceUID",
                 "SeriesDescription",
                 "SliceThickness",
+                "Modality",
             ],
         )
 
-        if "dose report" in ds.SeriesDescription.lower():
+        if "dose report" in ds.SeriesDescription.lower() and ds.get("Modality") == "SR":
             dose_report_file = file
             continue
 
@@ -222,7 +230,7 @@ def select_series_to_segment(
 
         series_data = SeriesData(
             series_inst_uid=series_uid,
-            description=series_desc,
+            series_description=series_desc,
             slice_thickness=float(dataset.get("SliceThickness", -1.0)),
             filepaths=filepaths,
             filepaths_num=len(filepaths),
@@ -334,7 +342,7 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
     return event_to_dose
 
 
-def find_dicoms(dicom_dir: Path) -> list[Path] | None:
+def find_dicoms(dicom_dir: Path) -> tuple[list[Path], Path] | None:
     """
     Returns DICOM files excluding DICOMDIR file.
 
@@ -345,11 +353,11 @@ def find_dicoms(dicom_dir: Path) -> list[Path] | None:
         paths (list[Path] | None): List of DICOM filepaths, otherwise `None`.
     """
 
-    for root, _, files in dicom_dir.walk():
+    for root, dirs, files in dicom_dir.walk():
         if len(files) == 0 or "DICOMDIR" in files:
             continue
         paths = [f for f in root.iterdir() if f.is_file()]
 
         if not paths:
             return None
-        return paths
+        return paths, root
