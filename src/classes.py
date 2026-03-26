@@ -186,9 +186,9 @@ class Metrics:
         return cls(
             area=d.get("area", {}),
             mean_hu=d.get("mean_hu", {}),
-            skelet_muscle_index=d.get("skelet_muscle_index"),
-            process_durations=d.get("process_durations"),
-            total_duration=d.get("total_duration"),
+            skelet_muscle_index=d.get("skelet_muscle_index", 0.0),
+            process_durations=ProcessDurations(**d.get("process_durations", {})),
+            total_duration=d.get("total_duration", 0.0),
             centroids=Centroids(
                 d.get("vertebre_centroid", []), d.get("body_centroid", [])
             ),
