@@ -103,6 +103,7 @@ def segment_ct_study(
         )
 
         metrics.centroids = centroids
+        metrics.l3_slice_index = centroids.body_centroid[-1]
 
         result = SeriesSegmentationResult(
             series_inst_uid=series_inst_uid,

@@ -164,6 +164,7 @@ class Metrics:
     process_durations: ProcessDurations = field(default_factory=ProcessDurations)
     total_duration: float | None = 0.0
     centroids: Centroids = field(default_factory=Centroids)
+    l3_slice_index: int = -1
 
     def _to_dict(self) -> dict[str, Any]:
         tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
@@ -171,7 +172,7 @@ class Metrics:
             {
                 "skelet_muscle_index": self.skelet_muscle_index,
                 "total_duration": self.total_duration,
-                "l3_slice_index": self.centroids.body_centroid[-1],
+                "l3_slice_index": self.l3_slice_index,
             }
             | {f"area_{label}": self.area.get(label) for label in tissue_labels}
             | {f"mean_hu_{label}": self.mean_hu.get(label) for label in tissue_labels}
