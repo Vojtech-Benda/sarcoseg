@@ -1,12 +1,13 @@
 import argparse
 import json
+import logging
 from pathlib import Path
 
 from totalsegmentator.python_api import download_pretrained_weights
 
-from src.slogger import get_logger
+# logger = get_logger(__name__)
 
-logger = get_logger(__name__)
+logger = logging.getLogger("setup_project")
 
 
 def setup_project(
