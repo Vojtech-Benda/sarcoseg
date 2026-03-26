@@ -14,7 +14,8 @@ import pydicom
 from SimpleITK import ImageSeriesReader, WriteImage
 
 from src.classes import SeriesData, StudyData
-from src.utils import read_volume
+
+# from src.utils import read_volume
 
 log = logging.getLogger("preprocess")
 
@@ -383,7 +384,7 @@ def find_dicoms(dicom_dir: Path) -> tuple[list[Path], Path] | None:
 
         if not paths:
             return None
-        return paths
+        return paths, root
 
 
 def process_tube_currents(series: dict[str, SeriesData], output_dir: Path | str):
