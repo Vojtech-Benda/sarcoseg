@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import shutil
@@ -91,6 +92,11 @@ def preprocess_dicom_study(
     log.debug(f"found {len(study_case.series)} valid series for segmentation")
 
     output_dir.mkdir(exist_ok=True, parents=True)
+
+    process_tube_currents(
+        study_case.series,
+        output_dir=output_dir,
+    )
 
     study_case._write_to_json(output_dir)
 
@@ -269,16 +275,6 @@ def select_series_to_segment(
     }
 
     for series_data in selected_series.values():
-        tube_currents = [
-            pydicom.dcmread(
-                p, stop_before_pixels=True, specific_tags=["XRayTubeCurrent"]
-            ).get("XRayTubeCurrent", None)
-            for p in series_data.filepaths
-        ]
-        series_data.mean_tube_current = mean(
-            [float(current) for current in tube_currents if current]
-        )
-
         series_data.kilo_voltage_peak = float(
             pydicom.dcmread(
                 series_data.filepaths[0], stop_before_pixels=True, specific_tags=["KVP"]
@@ -374,3 +370,39 @@ def find_dicoms(dicom_dir: Path) -> list[Path] | None:
         if not paths:
             return None
         return paths
+
+
+def process_tube_currents(series: dict[str, SeriesData], output_dir: Path | str):
+
+    series_currents: defaultdict[str, dict[str, int]] = defaultdict(dict[str, int])
+
+    for uid, series_data in series.items():
+        log.debug(f"processing tube currents for {uid}")
+
+        datasets = [
+            pydicom.dcmread(
+                p,
+                stop_before_pixels=True,
+                specific_tags=["XRayTubeCurrent", "InstanceNumber"],
+            )
+            for p in series_data.filepaths
+        ]
+
+        instnum_currents = {
+            ds.get("InstanceNumber"): int(
+                ds.get(
+                    "XRayTubeCurrent",
+                )
+            )
+            for ds in datasets
+        }
+
+        series_currents[uid] = instnum_currents
+
+        series_data.mean_tube_current = mean(
+            [current for current in instnum_currents.values() if current]
+        )
+
+    with open(Path(output_dir, "inst_num_currents.json"), "w") as file:
+        json.dump(series_currents, file, indent=2)
+    log.debug(f"saved instance number, tube current for {len(series_currents)} series")

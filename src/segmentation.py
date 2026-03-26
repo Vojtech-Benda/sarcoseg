@@ -105,6 +105,8 @@ def segment_ct_study(
         metrics.centroids = centroids
         metrics.l3_slice_index = centroids.body_centroid[-1]
 
+        metrics.set_l3_tube_current(output_dir, series_inst_uid)
+
         result = SeriesSegmentationResult(
             series_inst_uid=series_inst_uid,
             status=ProcessResult.SEGMENTATION_FINISHED,

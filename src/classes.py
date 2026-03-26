@@ -165,6 +165,7 @@ class Metrics:
     total_duration: float | None = 0.0
     centroids: Centroids = field(default_factory=Centroids)
     l3_slice_index: int = -1
+    l3_tube_current: int = -1
 
     def _to_dict(self) -> dict[str, Any]:
         tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
@@ -181,6 +182,19 @@ class Metrics:
     def set_durations(self, durations: ProcessDurations):
         self.process_durations = durations
         self.total_duration = sum(durations.__dict__.values())
+
+    def set_l3_tube_current(self, study_dir, series_inst_uid: str):
+        with open(Path(study_dir, "inst_num_currents.json"), "r") as file:
+            series_currents = json.load(file).get(series_inst_uid, None)
+
+            if not series_currents:
+                log.warning(f"series {series_inst_uid} has no tube currents")
+                return
+
+            self.l3_tube_current = series_currents.get(str(self.l3_slice_index), -1)
+            log.warning(
+                f"series {series_inst_uid} has no tube current at L3 slice {self.l3_slice_index}"
+            )
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> Self:
