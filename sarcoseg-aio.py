@@ -163,11 +163,11 @@ def main(args: argparse.Namespace):
             f"segmenting finished for {study_case.participant}, study {study_case.study_inst_uid}"
         )
 
-        for series_uid, result in segmentation_result.series_process_result.items():
+        for series_uid, result in segmentation_result.series_results.items():
             report.add_case(
                 study_case.participant,
                 study_case.study_inst_uid,
-                ProcessResult(result),
+                result.status,
                 series_uid,
             )
 
