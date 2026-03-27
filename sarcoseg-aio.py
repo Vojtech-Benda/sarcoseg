@@ -57,6 +57,12 @@ def get_args():
         help="remove DICOM files from input directory",
         default=False,
     )
+    parser.add_argument(
+        "--exclude-finished-studies",
+        action="store_true",
+        help="query database with finished studies and exclude corresponding STUDY_INSTANCE_UIDs",
+        default=False,
+    )
 
     return parser.parse_args()
 
@@ -75,9 +81,14 @@ def main(args: argparse.Namespace):
     if not labkey_api.is_labkey_reachable():
         sys.exit(-1)
 
-    finished_study_uids = labkey_api.exclude_finished_studies(
-        participant_list["STUDY_INSTANCE_UID"].to_list()
-    )
+    if args.exclude_finished_studies:
+        finished_study_uids = labkey_api.exclude_finished_studies(
+            participant_list["STUDY_INSTANCE_UID"].to_list()
+        )
+    else:
+        finished_study_uids: list[str] = participant_list[
+            "STUDY_INSTANCE_UID"
+        ].to_list()
 
     queried_study_cases: list[StudyData] = labkey_api._select_rows(
         schema_name="lists",
