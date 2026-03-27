@@ -249,7 +249,7 @@ def read_patient_list(
             header=0,
             dtype=str,
             usecols=columns,
-            sep="[,;\t]",
+            sep=";",
             engine="python",
         )
     elif suffix in (".xlsx", ".xls"):

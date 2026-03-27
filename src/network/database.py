@@ -144,8 +144,8 @@ class LabkeyAPI(APIWrapper):
         if not rows:
             log.debug("no rows excluded, returning input")
             return finished_study_uids
-
-        finished_studies = set([row.participant for row in rows])
+        # TODO: temporary fix for dict field/key error, row is of type dict[str, Any]
+        finished_studies = set([row["study_inst_uid"] for row in rows])
         log.debug(
             f"excluding {len(finished_studies)} participants due to existing segmentation results"
         )

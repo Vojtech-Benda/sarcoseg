@@ -75,8 +75,6 @@ def main(args: argparse.Namespace):
     if not labkey_api.is_labkey_reachable():
         sys.exit(-1)
 
-    finished_study_uids = participant_list["STUDY_INSTANCE_UID"]
-
     finished_study_uids = labkey_api.exclude_finished_studies(
         participant_list["STUDY_INSTANCE_UID"].to_list()
     )
