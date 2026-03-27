@@ -1,21 +1,15 @@
 import json
 import logging
 import re
-
-# import shutil
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
 from typing import Iterable
 
-# import dcm2niix
-# import dicom2nifti
 import pydicom
 from SimpleITK import ImageSeriesReader, WriteImage
 
 from src.classes import SeriesData, StudyData
-
-# from src.utils import read_volume
 
 log = logging.getLogger("preprocess")
 
@@ -34,7 +28,6 @@ SERIES_DESC_PATTERN = re.compile(
             "mip",
             "line",
             "distance",
-            "bestsyst",
             "head",
             "coronal",
             "cor",
@@ -59,9 +52,6 @@ CONTRAST_PHASES_PATTERN = re.compile(
     ),
     re.IGNORECASE,
 )
-
-# LAS_ORNT = nib.orientations.axcodes2ornt(("L", "A", "S"))
-# RAS_ORNT = nib.orientations.axcodes2ornt(("R", "A", "S"))
 
 
 def preprocess_dicom_study(
@@ -131,36 +121,10 @@ def write_series_as_nifti(
 
         log.info(f"written {uid} DICOM as NifTI")
 
-        # tmp_dir = Path(output_study_dir, f"tmp_{series_uid}")
-        # tmp_dir.mkdir(exist_ok=True, parents=True)
-        # [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
-
         if output_filepath.exists():
             log.debug(
                 f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
             )
-
-        # dicom2nifti.dicom_series_to_nifti(tmp)
-
-        # try:
-        #     args = [
-        #         "-o",
-        #         str(output_series_dir),
-        #         "-f",
-        #         "input_ct_volume",
-        #         "-z",
-        #         "y",
-        #         "-b",
-        #         "n",
-        #         "-w",
-        #         "1",
-        #         str(tmp_dir),
-        #     ]
-        #     returncode = dcm2niix.main(args, capture_output=True, text=True)
-        #     shutil.rmtree(tmp_dir)
-        # except RuntimeError as err:
-        #     log.error(err)
-        # log.debug(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
@@ -200,7 +164,7 @@ def filter_dicom_files(
             ],
         )
 
-        if "dose report" in ds.SeriesDescription.lower() and ds.get("Modality") == "SR":
+        if "dose report" in ds.SeriesDescription.lower():
             dose_report_file = file
             continue
 

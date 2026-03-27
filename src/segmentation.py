@@ -3,8 +3,7 @@ import subprocess
 from pathlib import Path
 from time import perf_counter
 
-import nibabel as nib
-from nibabel import Nifti1Image
+import SimpleITK as sitk
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
 from src import utils, visualization
@@ -121,7 +120,7 @@ def segment_ct_study(
         visualization.overlay_spine_mask(
             input_volume_data.image,
             spine_mask_data.image,
-            centroids.vertebre_centroid,
+            centroids,
             output_dir=case_images_dir,
         )
 
@@ -222,8 +221,8 @@ def segment_tissues(
 
 
 def extract_slices(
-    ct_volume: Nifti1Image,
-    spine_mask: Nifti1Image,
+    ct_volume: sitk.Image,
+    spine_mask: sitk.Image,
     output_dir: Path | str,
     slices_num: int = 0,
 ) -> tuple[ImageData, Centroids, float] | None:
@@ -246,12 +245,12 @@ def extract_slices(
         - **centroids** (Centroids): Indexes of whole L3 vertebrae centroid and L3 vertebrae body centroid.
         - **duration** (float): Duration of segmentation.
     """
-    if not isinstance(spine_mask, Nifti1Image):
+    if not isinstance(spine_mask, sitk.Image):
         raise TypeError(
             f"spine_mask should be of type sitk.Image, not `{type(spine_mask)}`"
         )
 
-    if not isinstance(ct_volume, Nifti1Image):
+    if not isinstance(ct_volume, sitk.Image):
         raise TypeError(
             f"ct_volume should be of type sitk.Image, not `{type(ct_volume)}`"
         )
@@ -265,8 +264,7 @@ def extract_slices(
     if not centroids.vertebre_centroid:
         return None
 
-    # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
-    tissue_slice = ct_volume.slicer[
+    tissue_slice = ct_volume[
         ..., centroids.body_centroid[1] : centroids.body_centroid[1] + 1
     ]
 
@@ -274,7 +272,9 @@ def extract_slices(
     if output_filepath.exists():
         log.debug(f"file `{output_filepath}` exists, overwriting")
 
-    nib.save(tissue_slice, output_filepath)
+    # nib.save(tissue_slice, output_filepath)
+    sitk.WriteImage(tissue_slice, output_filepath)
+
     duration = perf_counter() - start
     log.info(f"slice extraction finished in {duration:.4f} seconds")
 

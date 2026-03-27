@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Self
 
 import pandas as pd
-from nibabel import Nifti1Image
+from SimpleITK import Image
 
 from src.io import read_json
 from src.labels import DEFAULT_TISSUE_CLASSES
@@ -137,7 +137,7 @@ class ProcessResult(enum.Enum):
 
 @dataclass
 class ImageData:
-    image: Nifti1Image
+    image: Image
     path: Path
 
 
@@ -192,9 +192,10 @@ class Metrics:
                 return
 
             self.l3_tube_current = series_currents.get(str(self.l3_slice_index), -1)
-            log.warning(
-                f"series {series_inst_uid} has no tube current at L3 slice {self.l3_slice_index}"
-            )
+            if self.l3_tube_current == -1:
+                log.warning(
+                    f"series {series_inst_uid} has no tube current at L3 slice {self.l3_slice_index}"
+                )
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> Self:
@@ -279,7 +280,7 @@ class StudySegmentationResult:
             json.dump(serialized, file, indent=2)
 
         log.debug(
-            f"written DICOM tags for participant {self.participant}, study {self.study_inst_uid}"
+            f"written segmentation results for participant {self.participant}, study {self.study_inst_uid}"
         )
 
     @classmethod
@@ -336,25 +337,20 @@ class Report:
         self,
         participant: str,
         study_instance_uid: str,
-        process_result: ProcessResult,
+        process_result: ProcessResult | str,
         series_instance_uid: str | None = None,
     ):
+
+        if isinstance(process_result, ProcessResult):
+            process_result = process_result.value
+
         row: dict[str, Any] = {
             "participant": participant,
             "study_inst_uid": study_instance_uid,
             "series_inst_uid": series_instance_uid,
-            "process_result": process_result.value,
+            "process_result": process_result,
         }
         self.data_rows.append(row)
-        msg = f"case {participant}, study {study_instance_uid}, series {series_instance_uid}: {process_result.value}"
-        if process_result in (
-            ProcessResult.MISSING_L3_MASK,
-            ProcessResult.MISSING_ON_PACS_OR_LOCAL,
-            ProcessResult.NO_SERIES_TO_SEGMENT,
-        ):
-            log.warning(msg)
-        else:
-            log.info(msg)
 
     def write_report(self, directory: str | Path):
         df = pd.DataFrame(self.data_rows)
