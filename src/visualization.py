@@ -29,8 +29,8 @@ def overlay_spine_mask(
     output_dir: Path,
 ):
 
-    ct_volume = sitk.DICOMOrient(ct_volume)
-    spine_mask = sitk.DICOMOrient(spine_mask)
+    ct_volume = sitk.DICOMOrient(ct_volume, "LPS")
+    spine_mask = sitk.DICOMOrient(spine_mask, "LPS")
 
     vert_centroid = centroids.vertebre_centroid
     body_centroid = centroids.body_centroid
@@ -73,6 +73,9 @@ def overlay_spine_mask(
     for x in range(x1, x2):
         for y in range(y1, y2):
             sagittal.SetPixel((x, y), line_color)
+
+    coronal = sitk.Flip(coronal, [False, True])
+    sagittal = sitk.Flip(sagittal, [False, True])
 
     sitk.WriteImage(coronal, output_dir.joinpath("spine_coronal_overlay.png"))
     sitk.WriteImage(sagittal, output_dir.joinpath("spine_sagittal_overlay.png"))
