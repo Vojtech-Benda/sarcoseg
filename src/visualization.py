@@ -44,10 +44,10 @@ def overlay_spine_mask(
     ]
     coronal_views = [
         sitk.Cast(
-            sitk.IntensityWindowing(ct_volume[:, body_centroid[0], :], -100, 900),
+            sitk.IntensityWindowing(ct_volume[:, vert_centroid[1], :], -100, 900),
             sitk.sitkUInt8,
         ),
-        spine_mask[:, body_centroid[0], :],
+        spine_mask[:, vert_centroid[1], :],
     ]
 
     colormap = [channel for color in SPINE_COLORS for channel in color]
@@ -66,9 +66,9 @@ def overlay_spine_mask(
     y1, y2 = (body_centroid[-1], body_centroid[-1] + 1)
     line_color = (255, 255, 0)
 
-    for x in range(x1, x2):
-        for y in range(y1, y2):
-            coronal.SetPixel((x, y), line_color)
+    # for x in range(x1, x2):
+    #     for y in range(y1, y2):
+    #         coronal.SetPixel((x, y), line_color)
 
     for x in range(x1, x2):
         for y in range(y1, y2):
