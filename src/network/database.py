@@ -120,36 +120,36 @@ class LabkeyAPI(APIWrapper):
 
         log.info(f"updated {response.get('rowsAffected', 'n/a')}")
 
-    def exclude_finished_studies(self, finished_study_uids: list[str]) -> list[str]:
-        """Query Labkey `CTSegmentationData` table with input participants and exclude participants with finished segmentation.
-        If the queried table has no data, ie empty response, `input_participants` is returned instead.
+    def exclude_finished_studies(self, study_uids: list[str]) -> list[str]:
+        """Query Labkey `CTSegmentationData` table with list of Study Instance UIDs and exclude those with segmentation results.
+        Returns input list if the queried table has no data for matching values, ie no values for "rows" key.
 
         Args:
-            input_participants (list[str]): List of participants to query.
+            study_uids (list[str]): List of Study Instance UIDs values to match.
 
         Returns:
-            participants (list[str]): List of participants excluding participants existing in the queried table.
+            finished_study_uids (list[str]): List of Study Instance UIDs, excluding those with existing segmentation results.
         """
 
-        log.info("checking for participants with finished segmnetations")
+        log.info("checking for study uids with segmentation results")
 
         rows = self._select_rows(
             schema_name="lists",
             query_name="CTSegmentationData",
             columns=["STUDY_INST_UID"],
-            filter_dict={"STUDY_INST_UID": finished_study_uids},
+            filter_dict={"STUDY_INST_UID": study_uids},
             sanitize_rows=False,
         )
 
         if not rows:
-            log.debug("no rows excluded, returning input")
-            return finished_study_uids
-        # TODO: temporary fix for dict field/key error, row is of type dict[str, Any]
+            log.debug("no study uids excluded, returning input")
+            return study_uids
+
         finished_studies = set([row["study_inst_uid"] for row in rows])
         log.debug(
-            f"excluding {len(finished_studies)} participants due to existing segmentation results"
+            f"excluding {len(finished_studies)} study uids due to existing segmentation results"
         )
-        return list(set(finished_study_uids).symmetric_difference(finished_studies))
+        return list(set(study_uids).difference(finished_studies))
 
     @classmethod
     def init_from_json(cls, debug: bool = False) -> Self:
