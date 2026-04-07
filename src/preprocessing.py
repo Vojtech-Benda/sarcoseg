@@ -24,7 +24,7 @@ SERIES_DESC_PATTERN = re.compile(
             "report",
             "monitor",
             "text",
-            "planning",
+            # "planning",
             "mip",
             "line",
             "distance",
@@ -34,6 +34,8 @@ SERIES_DESC_PATTERN = re.compile(
             "sag",
             "sagital",
             "sagittal",
+            "bestdiast",
+            "bestsyst",
         )
     ),
     re.IGNORECASE,
@@ -46,6 +48,7 @@ CONTRAST_PHASES_PATTERN = re.compile(
             "nephro",
             "venous",
             "thorax",
+            "angio",
             "aorta",
             "aortic",
         )
@@ -164,19 +167,26 @@ def filter_dicom_files(
             ],
         )
 
+        # FILTER OUT FILES WITH FOLLOWING RULES:
+        # 1. "dose report" in SeriesDescription -> keep path to "dose report" file
+        # 2. "DERIVED" or "SECONDARY" in SeriesDescription -> does not affect files without those strings, eg. ["PRIMARY", "ORIGINAL", "AXIAL", ...]
+        #   - also removes plane reconstructed images, 3D volume renderings
+        # 3. file has SliceThickness -> removes non image type files - reports, protocols, etc.
+        # 4. filter out based on regex pattern match on SeriesDescription -> final clean up for any remaining non primary image files
+
         if "dose report" in ds.SeriesDescription.lower():
             dose_report_file = file
             continue
 
-        # filter out files in series matching pattern:
-        # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
-        if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
+        if "DERIVED" in ds.ImageType:
             continue
 
         if not hasattr(ds, "SliceThickness"):
             continue
 
-        if "DERIVED" in ds.ImageType:
+        # filter out remaining files with series matching pattern:
+        # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
+        if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
             continue
 
         series_uid = ds.SeriesInstanceUID
