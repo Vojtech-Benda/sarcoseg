@@ -128,7 +128,10 @@ def main(args: argparse.Namespace):
 
     report = Report(timestamp)
 
-    log.info(f"preprocessing and segmenting {len(queried_study_cases)} cases")
+    log.info(f"requested {len(queried_study_cases)} cases for segmentation")
+    log.info(f"{len(queried_study_cases) - len(study_cases)} cases already segmented")
+    log.info(f"preprocessing and segmenting {len(study_cases)} cases")
+
     for study_case in study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
