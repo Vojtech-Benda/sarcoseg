@@ -219,7 +219,7 @@ def main(args: argparse.Namespace):
 
             labkey_api.query.insert_rows(
                 "lists",
-                "CTSegmentationState",
+                "CT-Segmentation-Finished",
                 rows=[
                     {
                         "PARTICIPANT": study_case.participant,
