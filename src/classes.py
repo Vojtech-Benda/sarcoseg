@@ -319,6 +319,7 @@ class StudySegmentationResult:
                 if isinstance(result.status, ProcessResult)
                 else result.status,
                 "series_inst_uid": result.series_inst_uid,
+                "contrast_phase": result.contrast_phase,
             }
             metrics = result.metrics._to_dict() if result.metrics else {}
 
