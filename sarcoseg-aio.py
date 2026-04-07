@@ -58,12 +58,6 @@ def get_args():
         help="remove DICOM files from input directory",
         default=False,
     )
-    parser.add_argument(
-        "--exclude-finished-studies",
-        action="store_true",
-        help="query database with finished studies and exclude corresponding STUDY_INSTANCE_UIDs",
-        default=False,
-    )
 
     return parser.parse_args()
 
