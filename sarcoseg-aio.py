@@ -1,11 +1,14 @@
 import argparse
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from src import preprocessing, segmentation, slogger, utils
+from src import preprocessing, segmentation, utils
 from src.classes import ProcessResult, Report, StudyData
 from src.network import database, pacs
+from src.network.database import FILTER_TYPES, QueryFilter
+from src.slogger import setup_logger
 
 
 def get_args():
@@ -16,10 +19,10 @@ def get_args():
     )
 
     parser.add_argument(
-        "-v",
-        "--verbose",
+        "-d",
+        "--debug",
         action="store_true",
-        help="print more information to console",
+        help="log debug information to console",
         default=False,
     )
     parser.add_argument(
@@ -55,28 +58,32 @@ def get_args():
         help="remove DICOM files from input directory",
         default=False,
     )
+    parser.add_argument(
+        "--exclude-finished-studies",
+        action="store_true",
+        help="query database with finished studies and exclude corresponding STUDY_INSTANCE_UIDs",
+        default=False,
+    )
 
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace):
-    verbose = args.verbose
-    main_logger = slogger.get_logger(__name__)
+    debug = args.debug
 
-    participant_list = utils.read_patient_list(
-        args.participant_list, columns=["participant", "study_instance_uid"]
+    setup_logger(debug)
+    log = logging.getLogger("sarcoseg")
+
+    participants_df = utils.read_patient_list(
+        args.participant_list,
+        columns=["PARTICIPANT", "CAS_VYSETRENI"],
     )
 
-    labkey_api = database.LabkeyAPI.init_from_json(verbose=verbose)
+    labkey_api = database.LabkeyAPI.init_from_json(debug=debug)
     if not labkey_api.is_labkey_reachable():
-        main_logger.critical("labkey is unreachable")
         sys.exit(-1)
 
-    finished_study_uids = labkey_api.exclude_finished_studies(
-        participant_list.study_instance_uid.to_list()
-    )
-
-    queried_study_cases: list[StudyData] = labkey_api._select_rows(
+    queried_study_cases = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
@@ -86,17 +93,34 @@ def main(args: argparse.Namespace):
             "PACS_CISLO",
             "VYSKA_PAC.",
         ],  # TODO: possibly add CAS_VYSETRENI
-        filter_dict={"STUDY_INSTANCE_UID": finished_study_uids},
-        sanitize_rows=True,
+        filter_array=[
+            QueryFilter(
+                "PARTICIPANT",
+                ";".join(participants_df["PARTICIPANT"].to_list()),
+                FILTER_TYPES.EQUALS_ONE_OF,
+            ),
+            QueryFilter(
+                "CAS_VYSETRENI",
+                ";".join(participants_df["CAS_VYSETRENI"].to_list()),
+                FILTER_TYPES.EQUALS_ONE_OF,
+            ),
+        ],
     )
 
+    unfinished_cases = labkey_api.exclude_finished_studies(queried_study_cases)
+
     if not queried_study_cases:
-        main_logger.critical(
-            "quitting sarcoseg, labkey query response has no StudyInstanceUIDs"
+        log.critical(
+            "quitting sarcoseg, labkey query responses have no StudyInstanceUIDs"
         )
         sys.exit(-1)
 
-    pacs_api = pacs.PacsAPI.init_from_json(verbose=verbose)
+    study_cases = [
+        StudyData._from_labkey_row(case)
+        for case in unfinished_cases.to_dict(orient="records")
+    ]
+
+    pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = Path(args.output_dir, timestamp)
@@ -104,11 +128,15 @@ def main(args: argparse.Namespace):
 
     report = Report(timestamp)
 
-    for study_case in queried_study_cases:
+    log.info(f"requested {len(queried_study_cases)} cases for segmentation")
+    log.info(f"{len(queried_study_cases) - len(study_cases)} cases already segmented")
+    log.info(f"preprocessing and segmenting {len(study_cases)} cases")
+
+    for study_case in study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
         if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
-            main_logger.info(
+            log.info(
                 f"input study directory `{input_study_dir}` not found, trying to download from PACS instead"
             )
 
@@ -127,8 +155,8 @@ def main(args: argparse.Namespace):
 
         output_study_dir = Path(output_dir, study_case.study_inst_uid)
 
-        main_logger.info(
-            f"preprocessing {study_case.participant=}, {study_case.study_inst_uid=}"
+        log.info(
+            f"preprocessing case {study_case.participant}, study {study_case.study_inst_uid}"
         )
         preprocessing.preprocess_dicom_study(
             input_study_dir,
@@ -137,8 +165,8 @@ def main(args: argparse.Namespace):
         )
 
         if not study_case.series:
-            main_logger.warning(
-                f"{study_case.participant=}, {study_case.study_inst_uid=} has no series to segment"
+            log.warning(
+                f"case {study_case.participant}, study {study_case.study_inst_uid} has no series to segment"
             )
             report.add_case(
                 study_case.participant,
@@ -147,27 +175,27 @@ def main(args: argparse.Namespace):
             )
             continue
 
-        main_logger.info(
-            f"segmenting {study_case.participant=}, {study_case.study_inst_uid=}"
+        log.info(
+            f"segmenting case {study_case.participant}, study {study_case.study_inst_uid}"
         )
         segmentation_result = segmentation.segment_ct_study(
             output_study_dir,
             output_study_dir,
             study_case=study_case,
         )
+        log.info(
+            f"segmenting finished for {study_case.participant}, study {study_case.study_inst_uid}"
+        )
 
-        for series_uid, result in segmentation_result.series_process_result.items():
+        for series_uid, result in segmentation_result.series_results.items():
             report.add_case(
                 study_case.participant,
                 study_case.study_inst_uid,
-                ProcessResult(result),
+                result.status,
                 series_uid,
             )
 
-        print(segmentation_result)
-
         if args.upload_labkey:
-            # TEST:
             study_case_list = study_case._to_list_of_dicts()
             if study_case_list:
                 labkey_api._upload_data(
@@ -176,11 +204,10 @@ def main(args: argparse.Namespace):
                     rows=study_case_list,
                 )
             else:
-                main_logger.warning(
-                    f"study case {study_case.participant=}, {study_case.study_inst_uid=} has no DICOM data to send to labkey"
+                log.warning(
+                    f"case {study_case.participant}, study {study_case.study_inst_uid} has no DICOM data to send to labkey"
                 )
 
-            # TEST:
             segmentation_result_list = segmentation_result._to_list_of_dicts()
             if segmentation_result_list:
                 labkey_api._upload_data(
@@ -189,9 +216,20 @@ def main(args: argparse.Namespace):
                     rows=segmentation_result_list,
                 )
             else:
-                main_logger.warning(
-                    f"study case {study_case.participant=}, {study_case.study_inst_uid=} has no segmentation data to send to labkey"
+                log.warning(
+                    f"case {study_case.participant}, study {study_case.study_inst_uid} has no segmentation data to send to labkey"
                 )
+
+            labkey_api.query.insert_rows(
+                "lists",
+                "CT-Segmentation-Finished",
+                rows=[
+                    {
+                        "PARTICIPANT": study_case.participant,
+                        "STUDY_INSTANCE_UID": study_case.study_inst_uid,
+                    }
+                ],
+            )
 
         if args.remove_dicom_files:
             utils.remove_dicom_dir(input_study_dir)
@@ -200,7 +238,6 @@ def main(args: argparse.Namespace):
         utils.remove_empty_segmentation_dir(output_dir)
 
     report.write_report(output_dir)
-    # utils.make_report(queried_study_cases, output_dir, timestamp)
 
 
 if __name__ == "__main__":

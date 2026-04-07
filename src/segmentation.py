@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from pathlib import Path
 from time import perf_counter
@@ -9,15 +10,15 @@ from src import utils, visualization
 from src.classes import (
     Centroids,
     ImageData,
+    ProcessDurations,
     ProcessResult,
-    SegmentationResult,
+    SeriesSegmentationResult,
     StudyData,
+    StudySegmentationResult,
 )
-from src.slogger import get_logger
-from src.utils import DEFAULT_VERTEBRA_CLASSES
+from src.labels import DEFAULT_VERTEBRA_CLASSES
 
-logger = get_logger(__name__)
-
+log = logging.getLogger("segment")
 
 tissue_predictor = nnUNetPredictor()
 tissue_predictor.initialize_from_trained_model_folder(
@@ -29,7 +30,7 @@ def segment_ct_study(
     input_dir: str | Path,
     output_dir: str | Path,
     study_case: StudyData | None = None,
-) -> SegmentationResult:
+) -> StudySegmentationResult:
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
 
@@ -39,26 +40,25 @@ def segment_ct_study(
         )
 
     series_nifti_filepaths = list(input_dir.rglob("input_ct_volume.nii.gz"))
-    logger.info("-" * 25)
-    logger.info(
+
+    log.debug(
         f"found {len(series_nifti_filepaths)} volumes to segment spine in directory `{input_dir}`"
     )
 
-    seg_result = SegmentationResult._from_study_case(study_case)
+    study_segmentation = StudySegmentationResult._from_study_case(study_case)
 
     for series_filepath in series_nifti_filepaths:
         series_output_dir = series_filepath.parent
         series_inst_uid = series_output_dir.parts[-1]
+        contrast_phase = study_case.series[series_inst_uid].contrast_phase
 
-        logger.info(
-            f"running segmentation on {seg_result.participant=}, {series_inst_uid=}"
-        )
+        log.info(f"running segmentation series {series_inst_uid}")
 
         spine_mask_data, spine_duration = segment_spine(
             series_filepath, series_output_dir
         )
 
-        input_volume_data: ImageData = utils.read_volume(series_filepath, "LPI")
+        input_volume_data: ImageData = utils.read_volume(series_filepath)
         slice_extraction_result = extract_slices(
             input_volume_data.image,
             spine_mask_data.image,
@@ -66,12 +66,16 @@ def segment_ct_study(
         )
 
         if not slice_extraction_result:
-            logger.warning(
-                f"CT {seg_result.participant=}, {series_inst_uid=} has no L3 mask"
+            log.warning(
+                f"participant {study_segmentation.participant}, study {study_segmentation.study_inst_uid}, series {series_inst_uid} has no L3 mask"
             )
-            seg_result.series_process_result[series_inst_uid] = (
-                ProcessResult.MISSING_L3_MASK
+
+            result = SeriesSegmentationResult(
+                series_inst_uid=series_inst_uid,
+                status=ProcessResult.MISSING_L3_MASK,
+                contrast_phase=contrast_phase,
             )
+            study_segmentation.add_result(result)
             continue
 
         tissue_volume_data, centroids, extraction_duration = slice_extraction_result
@@ -91,24 +95,32 @@ def segment_ct_study(
             patient_height=study_case.patient_height,
         )
 
-        metrics.set_duration(
-            spine_duration, tissue_duration, extraction_duration, postproc_duration
+        metrics.set_durations(
+            ProcessDurations(
+                spine_duration, tissue_duration, extraction_duration, postproc_duration
+            )
         )
-        metrics.centroids = centroids
-        metrics.series_inst_uid = series_inst_uid
-        metrics.contrast_phase = study_case.series[series_inst_uid].contrast_phase
 
-        seg_result.metrics_dict[series_inst_uid] = metrics
-        seg_result.series_process_result[series_inst_uid] = (
-            ProcessResult.SEGMENTATION_FINISHED
+        metrics.centroids = centroids
+        metrics.l3_slice_index = centroids.body_centroid[-1]
+
+        metrics.set_l3_tube_current(output_dir, series_inst_uid)
+
+        result = SeriesSegmentationResult(
+            series_inst_uid=series_inst_uid,
+            status=ProcessResult.SEGMENTATION_FINISHED,
+            contrast_phase=contrast_phase,
+            metrics=metrics,
         )
+        study_segmentation.add_result(result)
+        log.debug(f"segmentation finished for series {series_inst_uid}")
 
         case_images_dir = series_output_dir.joinpath("images")
         case_images_dir.mkdir(exist_ok=True)
         visualization.overlay_spine_mask(
             input_volume_data.image,
             spine_mask_data.image,
-            centroids.vertebre_centroid,
+            centroids,
             output_dir=case_images_dir,
         )
 
@@ -117,10 +129,11 @@ def segment_ct_study(
             processed_data.image,
             output_dir=case_images_dir,
         )
-        logger.info("saved mask overlays")
+        log.debug("saved mask overlays")
 
-    seg_result._write_to_json(output_dir)
-    return seg_result
+    study_segmentation._write_to_json(output_dir)
+    log.debug(f" {series_inst_uid}")
+    return study_segmentation
 
 
 def segment_spine(
@@ -150,11 +163,11 @@ def segment_spine(
 
     spine_mask_path = output_dir.joinpath("spine_mask.nii.gz")
 
-    logger.info(f"\nsegmenting vertebrae for {input_nifti_path.name}")
+    log.debug(f"segmenting vertebrae for {input_nifti_path.name}")
 
     if not vert_classes:
         vert_classes = list(DEFAULT_VERTEBRA_CLASSES.keys())
-        logger.info(f"vert_classes is None, using default: {vert_classes}")
+        log.debug(f"vert_classes is None, using default: {vert_classes}")
 
     start = perf_counter()
 
@@ -179,9 +192,9 @@ def segment_spine(
     subprocess.run(args=command)
 
     duration = perf_counter() - start
-    logger.info(f"spine segmentation finised in {duration:.4f} seconds")
+    log.info(f"spine segmentation finised in {duration:.4f} seconds")
 
-    return utils.read_volume(spine_mask_path, "LPI"), duration
+    return utils.read_volume(spine_mask_path), duration
 
 
 def segment_tissues(
@@ -190,30 +203,26 @@ def segment_tissues(
     tissue_volume_path = Path(tissue_volume_path)
     case_output_dir = Path(case_output_dir)
 
-    logger.info(f"\nstarting tissue segmentation for {tissue_volume_path.name}")
+    log.debug(f"starting tissue segmentation for {tissue_volume_path.name}")
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
-    print(f"{tissue_volume_path=}")
     start = perf_counter()
-    try:
-        tissue_predictor.predict_from_files(
-            list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
-            output_folder_or_list_of_truncated_output_files=[str(output_filepath)],
-            num_processes_preprocessing=8,
-            num_processes_segmentation_export=8,
-        )
-    except RuntimeError:
-        logger.info(f"nnUNet finished `{tissue_volume_path}`")
+    tissue_predictor.predict_from_files(
+        list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
+        output_folder_or_list_of_truncated_output_files=[str(output_filepath)],
+        num_processes_preprocessing=8,
+        num_processes_segmentation_export=8,
+    )
 
     duration = perf_counter() - start
-    logger.info(f"tissue segmentation finished in {duration:.4f} seconds")
+    log.info(f"tissue segmentation finished in {duration:.4f} seconds")
 
-    return utils.read_volume(output_filepath, "LPI"), duration
+    return utils.read_volume(output_filepath), duration
 
 
 def extract_slices(
-    ct_volume: sitk.Image | Path | str,
-    spine_mask: sitk.Image | Path | str,
+    ct_volume: sitk.Image,
+    spine_mask: sitk.Image,
     output_dir: Path | str,
     slices_num: int = 0,
 ) -> tuple[ImageData, Centroids, float] | None:
@@ -255,19 +264,19 @@ def extract_slices(
     if not centroids.vertebre_centroid:
         return None
 
-    # keep tissue slice as 3D array to maintain origin etc. relative to input full body CT volume
     tissue_slice = ct_volume[
         ..., centroids.body_centroid[1] : centroids.body_centroid[1] + 1
     ]
 
     output_filepath = Path(output_dir, "tissue_slices.nii.gz")
     if output_filepath.exists():
-        logger.info(f"file `{output_filepath}` exists, overwriting")
+        log.debug(f"file `{output_filepath}` exists, overwriting")
 
+    # nib.save(tissue_slice, output_filepath)
     sitk.WriteImage(tissue_slice, output_filepath)
 
     duration = perf_counter() - start
-    logger.info(f"slice extraction finished in {duration:.4f} seconds")
+    log.info(f"slice extraction finished in {duration:.4f} seconds")
 
     return (
         ImageData(image=tissue_slice, path=output_filepath),

@@ -1,25 +1,34 @@
+import json
+import logging
 import re
-import shutil
+from collections import defaultdict
 from pathlib import Path
 from statistics import mean
+from typing import Iterable
 
-import dcm2niix
 import pydicom
+from pydicom.multival import MultiValue
+from SimpleITK import ImageSeriesReader, WriteImage
 
-from src import slogger
 from src.classes import SeriesData, StudyData
+from src.utils import SERIES_DESC_PATTERN
 
-logger = slogger.get_logger(__name__)
+log = logging.getLogger("preprocess")
 
-
-SERIES_DESC_PATTERN = re.compile(
+CONTRAST_PHASES_PATTERN = re.compile(
     r"|".join(
-        ("protocol", "topogram", "scout", "patient", "dose", "report", "monitor")
+        (
+            "abdomen",
+            "arterial",
+            "nephro",
+            "venous",
+            "thorax",
+            "angio",
+            "aorta",
+            "aortic",
+        )
     ),
     re.IGNORECASE,
-)
-CONTRAST_PHASES_PATTERN = re.compile(
-    r"|".join(("abdomen", "arterial", "nephro", "venous")), re.IGNORECASE
 )
 
 
@@ -32,14 +41,15 @@ def preprocess_dicom_study(
     if isinstance(output_dir, str):
         output_dir = Path(output_dir)
 
-    dicom_files = find_dicoms(input_dir)
+    dicom_file_dir = find_dicoms(input_dir)
 
-    if not dicom_files:
-        logger.error(f"no DICOM files found in `{input_dir}`")
+    if not dicom_file_dir:
+        log.warning(f"no DICOM files found in `{input_dir}`")
         return None
 
-    logger.info(
-        f"preprocessing DICOM files for {study_case.participant=}, {study_case.study_inst_uid=}"
+    dicom_files, dicom_dir = dicom_file_dir
+    log.debug(
+        f"preprocessing DICOM files for case {study_case.participant}, study {study_case.study_inst_uid}"
     )
 
     series_files_map, dose_report_path = filter_dicom_files(dicom_files)
@@ -52,55 +62,47 @@ def preprocess_dicom_study(
         series_files_map, event_dose_map=event_dose_map
     )
 
-    logger.info(f"found {len(study_case.series)} valid series for segmentation")
+    log.debug(f"found {len(study_case.series)} valid series for segmentation")
 
     output_dir.mkdir(exist_ok=True, parents=True)
+
+    process_tube_currents(
+        study_case.series,
+        output_dir=output_dir,
+    )
 
     study_case._write_to_json(output_dir)
 
     write_series_as_nifti(
-        output_dir, {uid: series.filepaths for uid, series in study_case.series.items()}
+        dicom_dir,
+        output_dir,
+        study_case.series.keys(),
     )
 
-    logger.info("-" * 25)
 
+def write_series_as_nifti(
+    dicom_directory, output_study_dir: Path, series_uids: Iterable[str]
+):
+    reader = ImageSeriesReader()
 
-def write_series_as_nifti(output_study_dir: Path, series: dict[str, list[Path]]):
-    for series_uid, filepaths in series.items():
-        logger.info(f"converting {series_uid=} DICOM volume as NifTI")
+    for uid in series_uids:
+        log.debug(f"converting {uid} DICOM volume into NifTI")
 
-        output_series_dir = output_study_dir.joinpath(series_uid)
+        output_series_dir = output_study_dir.joinpath(uid)
         output_series_dir.mkdir(exist_ok=True, parents=True)
         output_filepath = output_series_dir.joinpath("input_ct_volume.nii.gz")
 
-        tmp_dir = Path(output_study_dir, f"tmp_{series_uid}")
-        tmp_dir.mkdir(exist_ok=True, parents=True)
-        [shutil.copy2(file, tmp_dir.joinpath(file.name)) for file in filepaths]
+        filenames = reader.GetGDCMSeriesFileNames(dicom_directory, uid)
+        reader.SetFileNames(filenames)
+        image = reader.Execute()
+        WriteImage(image, output_filepath)
+
+        log.info(f"written {uid} DICOM as NifTI")
 
         if output_filepath.exists():
-            logger.info(
+            log.debug(
                 f"overwriting existing input_ct_volume.nii.gz at `{str(output_filepath.parent)}`"
             )
-
-        try:
-            args = [
-                "-o",
-                str(output_series_dir),
-                "-f",
-                "input_ct_volume",
-                "-z",
-                "y",
-                "-b",
-                "n",
-                "-w",
-                "1",
-                str(tmp_dir),
-            ]
-            returncode = dcm2niix.main(args, capture_output=True, text=True)
-            shutil.rmtree(tmp_dir)
-        except RuntimeError as err:
-            logger.error(err)
-        logger.info(f"finished NifTI conversion with {returncode=}\n")
 
 
 def filter_dicom_files(
@@ -124,7 +126,7 @@ def filter_dicom_files(
         - **dose_report_file** (Path | None): path to Dose Report file if found, otherwise `None`.
     """
 
-    series_files_map: dict[str, list[Path]] = {}
+    series_files_map: defaultdict[str, list[Path]] = defaultdict(list[Path])
 
     dose_report_file = None
     for file in dicom_files:
@@ -136,34 +138,50 @@ def filter_dicom_files(
                 "SeriesInstanceUID",
                 "SeriesDescription",
                 "SliceThickness",
+                "Modality",
+                "ConvolutionKernel",
             ],
         )
+
+        # FILTER OUT FILES WITH FOLLOWING RULES:
+        # 1. "dose report" in SeriesDescription -> keep path to "dose report" file
+        # 2. "DERIVED" or "SECONDARY" in SeriesDescription -> does not affect files without those strings, eg. ["PRIMARY", "ORIGINAL", "AXIAL", ...]
+        #   - also removes plane reconstructed images, 3D volume renderings
+        # 3. file has SliceThickness -> removes non image type files - reports, protocols, etc.
+        # 4. filter out based on regex pattern match on SeriesDescription -> final clean up for any remaining non primary image files
 
         if "dose report" in ds.SeriesDescription.lower():
             dose_report_file = file
             continue
 
-        # filter out files in series matching pattern:
-        # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
-        if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
+        if "DERIVED" in ds.ImageType:
             continue
 
         if not hasattr(ds, "SliceThickness"):
             continue
 
-        if "DERIVED" in ds.ImageType:
+        if convolution_kernel := ds.get("ConvolutionKernel", ""):
+            convolution_kernel = (
+                convolution_kernel[0]
+                if isinstance(convolution_kernel, MultiValue)
+                else convolution_kernel
+            )
+            if "bl57" in convolution_kernel.lower():
+                continue
+
+        # filter out remaining files with series matching pattern:
+        # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
+        if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
             continue
 
         series_uid = ds.SeriesInstanceUID
-        if series_uid in series_files_map:
-            series_files_map[series_uid].append(file)
-        else:
-            series_files_map[series_uid] = [file]
 
-    logger.info(f"found {len(series_files_map.keys())} image series")
+        series_files_map[series_uid].append(file)
+
+    log.debug(f"found {len(series_files_map.keys())} image series")
 
     if not dose_report_file:
-        logger.warning("dose report DICOM file not found")
+        log.warning("dose report DICOM file not found")
 
     return series_files_map, dose_report_file
 
@@ -184,7 +202,9 @@ def select_series_to_segment(
         series_list (dict[str, SeriesData]): List of series selected for segmentation.
     """
 
-    series_by_contrast: dict[str, list[SeriesData]] = {}
+    series_by_contrast: defaultdict[str, list[SeriesData]] = defaultdict(
+        list[SeriesData]
+    )
 
     for series_uid, filepaths in series_files_map.items():
         # read only the first file to filter series
@@ -193,29 +213,32 @@ def select_series_to_segment(
         # filter by words in SeriesDescription
         series_desc: str = dataset.SeriesDescription
 
-        contrast_applied = dataset.get("ContrastBolusAgent", None)
         convolution_kernel = dataset.get("ConvolutionKernel", None)
 
         series_data = SeriesData(
             series_inst_uid=series_uid,
-            description=series_desc,
+            series_description=series_desc,
             slice_thickness=float(dataset.get("SliceThickness", -1.0)),
             filepaths=filepaths,
             filepaths_num=len(filepaths),
-            has_contrast="yes" if contrast_applied else "no",
+            # has_contrast="yes" if contrast_applied else "no",
             irradiation_event_uid=dataset.get("IrradiationEventUID", "n/a"),
             convolution_kernel=convolution_kernel[0] if convolution_kernel else "n/a",
         )
 
+        contrast_applied = dataset.get("ContrastBolusAgent", None)
+
         if contrast_match := CONTRAST_PHASES_PATTERN.search(series_desc):
-            series_data.contrast_phase = contrast_match.group().lower()
+            phase = contrast_match.group().lower()
+            series_data.contrast_phase = phase
+            series_data.has_contrast = (
+                "yes" if contrast_applied and phase != "abdomen" else "no"
+            )
         else:
             series_data.contrast_phase = "other"
+            series_data.has_contrast = "n/a"
 
-        if series_data.contrast_phase in series_by_contrast:
-            series_by_contrast[series_data.contrast_phase].append(series_data)
-        else:
-            series_by_contrast[series_data.contrast_phase] = [series_data]
+        series_by_contrast[series_data.contrast_phase].append(series_data)
 
     selected_series = {
         phase: min(
@@ -226,16 +249,6 @@ def select_series_to_segment(
     }
 
     for series_data in selected_series.values():
-        tube_currents = [
-            pydicom.dcmread(
-                p, stop_before_pixels=True, specific_tags=["XRayTubeCurrent"]
-            ).get("XRayTubeCurrent", None)
-            for p in series_data.filepaths
-        ]
-        series_data.mean_tube_current = mean(
-            [float(current) for current in tube_currents if current]
-        )
-
         series_data.kilo_voltage_peak = float(
             pydicom.dcmread(
                 series_data.filepaths[0], stop_before_pixels=True, specific_tags=["KVP"]
@@ -244,10 +257,10 @@ def select_series_to_segment(
 
         if event_dose_map and series_data.irradiation_event_uid != "n/a":
             series_data.mean_ctdi_vol = event_dose_map.get(
-                series_data.irradiation_event_uid
+                series_data.irradiation_event_uid, {}
             ).get("mean_ctdi_vol", -1.0)
             series_data.dose_length_product = event_dose_map.get(
-                series_data.irradiation_event_uid
+                series_data.irradiation_event_uid, {}
             ).get("dlp", -1.0)
 
     return {series.series_inst_uid: series for series in selected_series.values()}
@@ -273,7 +286,7 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
     ds = pydicom.dcmread(dose_filepath)
 
     if ds.Modality != "SR":
-        logger.warning(f"file {dose_filepath} is not dose report")
+        log.warning(f"file {dose_filepath} is not dose report")
         return {}
 
     event_to_dose = {}
@@ -312,7 +325,7 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
     return event_to_dose
 
 
-def find_dicoms(dicom_dir: Path) -> list[Path] | None:
+def find_dicoms(dicom_dir: Path) -> tuple[list[Path], Path] | None:
     """
     Returns DICOM files excluding DICOMDIR file.
 
@@ -323,11 +336,47 @@ def find_dicoms(dicom_dir: Path) -> list[Path] | None:
         paths (list[Path] | None): List of DICOM filepaths, otherwise `None`.
     """
 
-    for root, _, files in dicom_dir.walk():
+    for root, dirs, files in dicom_dir.walk():
         if len(files) == 0 or "DICOMDIR" in files:
             continue
         paths = [f for f in root.iterdir() if f.is_file()]
 
         if not paths:
             return None
-        return paths
+        return paths, root
+
+
+def process_tube_currents(series: dict[str, SeriesData], output_dir: Path | str):
+
+    series_currents: defaultdict[str, dict[str, int]] = defaultdict(dict[str, int])
+
+    for uid, series_data in series.items():
+        log.debug(f"processing tube currents for {uid}")
+
+        datasets = [
+            pydicom.dcmread(
+                p,
+                stop_before_pixels=True,
+                specific_tags=["XRayTubeCurrent", "InstanceNumber"],
+            )
+            for p in series_data.filepaths
+        ]
+
+        instnum_currents = {
+            ds.get("InstanceNumber"): int(
+                ds.get(
+                    "XRayTubeCurrent",
+                )
+            )
+            for ds in datasets
+        }
+
+        series_currents[uid] = instnum_currents
+
+        series_data.mean_tube_current = mean(
+            [current for current in instnum_currents.values() if current]
+        )
+
+    with open(Path(output_dir, "inst_num_currents.json"), "w") as file:
+        json.dump(series_currents, file, indent=2)
+    log.debug(f"saved instance number, tube current for {len(series_currents)} series")

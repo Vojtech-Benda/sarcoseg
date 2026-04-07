@@ -1,17 +1,21 @@
+import logging
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Self
 
 from pydicom import dcmread
+from pydicom.multival import MultiValue
 from pynetdicom.apps.echoscu import echoscu
-from pynetdicom.apps.movescu import movescu
 
-from src import slogger
+# from pynetdicom.apps.movescu import movescu
+# from src import slogger
 from src.io import read_json
+from src.utils import SERIES_DESC_PATTERN
 
-logger = slogger.get_logger(__name__)
+log = logging.getLogger("pacs")
 
 WRONG_IMAGE_TYPES = ["DERIVED", "SECONDARY", "OTHER", "LOCALIZER"]
 
@@ -34,49 +38,67 @@ class PacsAPI:
         self.store_port = store_port
 
     def _movescu(self, study_inst_uid: str, download_directory: str | Path):
-        os.makedirs(download_directory, exist_ok=True)
+        response_dir = Path(download_directory, "rsp")
+        response_dir.mkdir(exist_ok=True, parents=True)
 
-        # args_findscu = [
-        #     "./dcmtk/findscu",
-        #     self.ip,
-        #     str(self.port),
-        #     "-aet",
-        #     self.aet,
-        #     "-aec",
-        #     self.aec,
-        #     "-S",
-        #     "-X",  # store responses
-        #     "-k",
-        #     "QueryRetrieveLevel=SERIES",
-        #     "-k",
-        #     f"StudyInstanceUID={study_inst_uid}",
-        #     "-od",
-        #     str(download_directory),
-        # ]
-        # result = subprocess.run(args_findscu, capture_output=True, text=True)
-        # print(result.returncode)
-        # if result.returncode == -1
-        #     return result.returncode
+        args_findscu = [
+            "./dcmtk/findscu",
+            self.ip,
+            str(self.port),
+            "-aet",
+            self.aet,
+            "-aec",
+            self.aec,
+            "-S",
+            "-X",  # store responses
+            "-k",
+            "QueryRetrieveLevel=SERIES",
+            "-k",
+            "SeriesDescription",
+            "-k",
+            "ImageType",
+            "-k",
+            "ConvolutionKernel",
+            "-k",
+            f"StudyInstanceUID={study_inst_uid}",
+            "-od",
+            str(response_dir),
+        ]
+        result = subprocess.run(args_findscu, capture_output=True, text=True)
+        if result.returncode == -1:
+            return result.returncode
 
-        # # TODO: filter out response files
-        # response_files = list(Path(download_directory).rglob("rsp*.dcm"))
+        response_files = Path(response_dir).glob("rsp*.dcm")
 
-        # query_files = []
-        # for res_file in response_files:
-        #     ds = dcmread(res_file)
+        query_files = []
+        for rsp in response_files:
+            ds = dcmread(rsp)
 
-        #     series_des = ds.get("SeriesDescription", "")
-        #     if series_des and "dose report" in series_des.lower():
-        #         query_files.append(res_file)
+            series_desc = ds.get("SeriesDescription", "").lower()
 
-        #     image_type = ds.get("ImageType", [])
-        #     if image_type and any(img_type in WRONG_IMAGE_TYPES for img_type in image_type):
-        #         continue
+            if "dose report" in series_desc:
+                query_files.append(rsp)
+                continue
 
-        #     query_files.append(res_file)
+            image_type = ds.get("ImageType", [])
+            if image_type and any(
+                img_type in WRONG_IMAGE_TYPES for img_type in image_type
+            ):
+                continue
 
-        # # clean the download directory
-        # [os.remove(f) for f in response_files]
+            if convolution_kernel := ds.get("ConvolutionKernel", ""):
+                convolution_kernel = (
+                    convolution_kernel[0]
+                    if isinstance(convolution_kernel, MultiValue)
+                    else convolution_kernel
+                )
+                if "bl57" in convolution_kernel.lower():
+                    continue
+
+            if SERIES_DESC_PATTERN.search(series_desc):
+                continue
+
+            query_files.append(rsp)
 
         args = [
             "./dcmtk/movescu",
@@ -92,30 +114,29 @@ class PacsAPI:
             str(download_directory),
             "-S",
             "-k",
-            "QueryRetrieveLevel=STUDY",
+            "QueryRetrieveLevel=SERIES",
             "-k",
             f"StudyInstanceUID={study_inst_uid}",
             # TODO: add response files here!!!
-        ]
+        ] + query_files
 
-        logger.info(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
-        try:
-            result = subprocess.run(args, capture_output=True, text=True)
-            # movescu.main(args)
-        except SystemExit:
-            logger.info("movescu finished and tried to exit; continuing execution")
+        log.debug(f"running C-MOVE for StudyInstanceUID: {study_inst_uid}")
+        result = subprocess.run(args, capture_output=True, text=True)
+
+        # clean the response directory
+        shutil.rmtree(response_dir)
 
         if len(os.listdir(download_directory)) == 0:
             os.rmdir(download_directory)
-            logger.info(
+            log.error(
                 f"C-MOVE failed downloading data for StudyInstanceUID: {study_inst_uid}"
             )
             return -1
 
-        logger.info("finished C-MOVE")
+        log.debug("finished C-MOVE")
         return 0
 
-    def _echoscu(self, verbose: bool = False):
+    def _echoscu(self, debug: bool = False):
         args = [
             sys.executable,
             echoscu.__file__,
@@ -127,28 +148,25 @@ class PacsAPI:
             self.aet,
         ]
 
-        if verbose:
-            args.append("-v")
+        if debug:
+            args.append("-d")
 
         ret = subprocess.run(args, capture_output=True, text=True)
-        logger.info(f"ECHOSCU return code: {ret.returncode}")
+        log.info(f"ECHOSCU return code: {ret.returncode}")
 
-        if verbose:
-            if ret.stdout:
-                logger.info(f"ECHOSCU stdout: {ret.stdout}")
-            if ret.stderr:
-                logger.info(f"ECHOSCU stderr: {ret.stderr}")
-        return ret
+        if ret.stdout:
+            log.debug(f"ECHOSCU stdout: {ret.stdout}")
+        if ret.stderr:
+            log.debug(f"ECHOSCU stderr: {ret.stderr}")
+        return ret.returncode
 
     @classmethod
-    def init_from_json(cls, verbose: bool = False) -> Self:
+    def init_from_json(cls, debug: bool = False) -> Self:
         conf = read_json("./src/network/network.json")["pacs"]
-
-        if verbose:
-            logger.info(f"initializing PACS API with: {conf}")
+        log.debug(f"initializing PACS API with: {conf}")
 
         if not all(conf.values()):
-            logger.error(f"some fields are missing values: {conf}")
+            log.error(f"some fields are missing values: {conf}")
             raise ValueError("Unable to initialize PACS API")
 
         return cls(

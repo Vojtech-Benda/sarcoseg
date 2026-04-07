@@ -1,4 +1,3 @@
-import unittest
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,7 @@ class TestPacs:
     STUDY_INST_UID: str
 
     def test_echoscu(self):
-        ret = self.api._echoscu(verbose=True)
+        ret = self.api._echoscu(debug=True)
         assert ret.returncode == 0
 
     def test_movescu(self):
@@ -30,19 +29,17 @@ class TestPacs:
 
         download_dir = Path(f"./tests/download/{self.STUDY_INST_UID}")
 
-        if not download_dir.exists() and list(download_dir.rglob("*")) != 0:
-            print(
-                f"input study directory `{self.STUDY_INST_UID}` not found, trying to download from PACS instead"
-            )
-            self.api._movescu(self.STUDY_INST_UID, download_dir)
+        result = self.api._movescu(self.STUDY_INST_UID, download_dir)
 
-        files = list(download_dir.rglob("*"))
+        files = [entry for entry in download_dir.glob("*") if entry.is_file()]
 
+        assert result == 0
         assert len(files) != 0
+        assert not Path(download_dir, "rsp").exists()
 
 
 class TestLabkey:
-    api = database.LabkeyAPI.init_from_json(verbose=True)
+    api = database.LabkeyAPI.init_from_json(debug=True)
 
     def test_labkey_connection(self):
         assert self.api.is_labkey_reachable()
@@ -82,5 +79,5 @@ def validate_study_uid(study_uid: str):
     return study_uid
 
 
-if __name__ == "__main__":
-    unittest.main()
+# if __name__ == "__main__":
+# unittest.main()

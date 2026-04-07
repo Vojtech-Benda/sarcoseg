@@ -1,5 +1,6 @@
 import enum
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Self
@@ -7,16 +8,16 @@ from typing import Any, Self
 import pandas as pd
 from SimpleITK import Image
 
-from src import slogger
 from src.io import read_json
+from src.labels import DEFAULT_TISSUE_CLASSES
 
-logger = slogger.get_logger(__name__)
+log = logging.getLogger("classes")
 
 
 @dataclass
 class SeriesData:
     series_inst_uid: str
-    description: str | None = None
+    series_description: str | None = None
     filepaths: list[Path] = field(default_factory=list, repr=False)
     filepaths_num: int | None = field(default=None, repr=False)
     slice_thickness: float | None = field(default=None, repr=False)
@@ -50,9 +51,8 @@ class SeriesData:
 class StudyData:
     participant: str
     study_inst_uid: str
-    # id: str | None = field(default=None, compare=False, repr=False)
     patient_id: str | None = field(default=None, repr=False, compare=False)
-    study_date: str | None = field(default=None, repr=False, compare=False)
+    # study_date: str | None = field(default=None, repr=False, compare=False)
     patient_height: float | int | None = field(default=None, repr=False, compare=False)
     series: dict[str, SeriesData] = field(default_factory=dict)
 
@@ -61,9 +61,8 @@ class StudyData:
         return cls(
             participant=row.get("PARTICIPANT"),
             study_inst_uid=row.get("STUDY_INSTANCE_UID"),
-            # id=row.get("ID"),
-            patient_id=row.get("RODNE_CISLO"),
-            patient_height=row.get("VYSKA_PAC."),
+            patient_id=row.get("RODNE_CISLO", ""),
+            patient_height=row.get("VYSKA_PAC.", 0.0),
         )
 
     @classmethod
@@ -109,12 +108,12 @@ class StudyData:
 
         filepath = output_dir.joinpath(f"dicom_tags_{self.study_inst_uid}.json")
         if filepath.exists():
-            logger.info(f"overwriting existing file at `{str(filepath)}`")
+            log.debug(f"overwriting existing file at `{str(filepath)}`")
 
         with open(filepath, mode="w", encoding="utf-8") as file:
             json.dump(serialized, file, indent=2)
 
-        logger.info(
+        log.debug(
             f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}\nfields excluded: {exclude}"
         )
 
@@ -122,10 +121,18 @@ class StudyData:
         _study = {
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
+            "patient_height": self.patient_height,
             # "study_date": self.study_date,
-            # "id": self.id,
         }
         return [_study | series._to_dict() for series in self.series.values()]
+
+
+class ProcessResult(enum.Enum):
+    NONE = "NONE"
+    MISSING_L3_MASK = "MISSING_L3_MASK"
+    SEGMENTATION_FINISHED = "SEGMENTATION_FINISHED"
+    MISSING_ON_PACS_OR_LOCAL = "MISSING_ON_PACS_OR_LOCAl"
+    NO_SERIES_TO_SEGMENT = "NO_SERIES_TO_SEGMENT"
 
 
 @dataclass
@@ -141,70 +148,104 @@ class Centroids:
 
 
 @dataclass
-class MetricsData:
-    area: dict[str, Any]
-    mean_hu: dict[str, Any]
-    skelet_muscle_index: float | None = None
+class ProcessDurations:
+    spine_seg: int | float = 0.0
+    tissue_seg: int | float = 0.0
+    slice_extraction: int | float = 0.0
+    postprocessing: int | float = 0.0
 
-    series_inst_uid: str | None = None
-    contrast_phase: str | None = None
 
-    duration: float | None = None
+@dataclass
+class Metrics:
+    area: dict[str, Any] = field(default_factory=dict)
+    mean_hu: dict[str, Any] = field(default_factory=dict)
+    skelet_muscle_index: float | None = 0.0
+
+    process_durations: ProcessDurations = field(default_factory=ProcessDurations)
+    total_duration: float | None = 0.0
     centroids: Centroids = field(default_factory=Centroids)
+    l3_slice_index: int = -1
+    l3_tube_current: int = -1
 
     def _to_dict(self) -> dict[str, Any]:
-        tissue_labels = self.area.keys()
+        tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
         return (
             {
-                "series_inst_uid": self.series_inst_uid,
-                "contrast_phase": self.contrast_phase,
                 "skelet_muscle_index": self.skelet_muscle_index,
-                "duration": self.duration,
+                "total_duration": self.total_duration,
+                "L3_slice_index": self.l3_slice_index,
+                "L3_tube_current": self.l3_tube_current,
             }
-            | {f"area_{label}": self.area[label] for label in tissue_labels}
-            | {f"mean_hu_{label}": self.mean_hu[label] for label in tissue_labels}
+            | {f"area_{label}": self.area.get(label) for label in tissue_labels}
+            | {f"mean_hu_{label}": self.mean_hu.get(label) for label in tissue_labels}
         )
 
-    def set_duration(self, *durations):
-        self.duration = sum(durations)
+    def set_durations(self, durations: ProcessDurations):
+        self.process_durations = durations
+        self.total_duration = sum(durations.__dict__.values())
+
+    def set_l3_tube_current(self, study_dir, series_inst_uid: str):
+        with open(Path(study_dir, "inst_num_currents.json"), "r") as file:
+            series_currents = json.load(file).get(series_inst_uid, None)
+
+            if not series_currents:
+                log.warning(f"series {series_inst_uid} has no tube currents")
+                return
+
+            self.l3_tube_current = series_currents.get(str(self.l3_slice_index), -1)
+            if self.l3_tube_current == -1:
+                log.warning(
+                    f"series {series_inst_uid} has no tube current at L3 slice {self.l3_slice_index}"
+                )
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> Self:
         return cls(
             area=d.get("area", {}),
             mean_hu=d.get("mean_hu", {}),
-            skelet_muscle_index=d.get("skelet_muscle_index"),
-            series_inst_uid=d.get("series_inst_uid"),
-            contrast_phase=d.get("contrast_phase"),
-            duration=d.get("duration"),
+            skelet_muscle_index=d.get("skelet_muscle_index", 0.0),
+            process_durations=ProcessDurations(**d.get("process_durations", {})),
+            total_duration=d.get("total_duration", 0.0),
             centroids=Centroids(
                 d.get("vertebre_centroid", []), d.get("body_centroid", [])
             ),
         )
 
 
-class ProcessResult(enum.Enum):
-    MISSING_L3_MASK = "MISSING_L3_MASK"
-    SEGMENTATION_FINISHED = "SEGMENTATION_FINISHED"
-    MISSING_ON_PACS_OR_LOCAL = "MISSING_ON_PACS_OR_LOCAl"
-    NO_SERIES_TO_SEGMENT = "NO_SERIES_TO_SEGMENT"
+@dataclass
+class SeriesSegmentationResult:
+    series_inst_uid: str
+    status: ProcessResult = field(default=ProcessResult.NONE)
+    contrast_phase: str | None = None
+    metrics: Metrics | None = field(default=None)
 
 
 @dataclass
-class SegmentationResult:
+class StudySegmentationResult:
     participant: str
     study_inst_uid: str
-    # id: str | None = None
     patient_height: float | None = None
-    metrics_dict: dict[str, MetricsData] = field(default_factory=dict)
-    series_process_result: dict[str, ProcessResult] = field(default_factory=dict)
+    series_results: dict[str, SeriesSegmentationResult] = field(default_factory=dict)
+
+    def add_result(self, result: SeriesSegmentationResult):
+        if not result.metrics:
+            log.warning(f"metrics for {result.series_inst_uid} is None")
+        if result.status is ProcessResult.NONE:
+            log.warning(
+                f"result status for {result.series_inst_uid} is {result.status}"
+            )
+
+        log.debug(
+            f"added series result {result.series_inst_uid} for study {self.study_inst_uid}"
+        )
+
+        self.series_results[result.series_inst_uid] = result
 
     @classmethod
     def _from_study_case(cls, study_data: StudyData) -> Self:
         return cls(
             participant=study_data.participant,
             study_inst_uid=study_data.study_inst_uid,
-            # id=study_data.id,
             patient_height=study_data.patient_height,
         )
 
@@ -219,9 +260,12 @@ class SegmentationResult:
         #     exclude.update(exclude_fields)
 
         # TODO: temporary fix for unserializable ProcessResult
-        self.series_process_result = {
-            uid: value.value for uid, value in self.series_process_result.items()
-        }
+        for result in self.series_results.values():
+            result.status = (
+                result.status.value
+                if isinstance(result.status, ProcessResult)
+                else result.status
+            )
 
         serialized = asdict(
             self,
@@ -231,13 +275,13 @@ class SegmentationResult:
 
         filepath = output_dir.joinpath(f"metrics_{self.study_inst_uid}.json")
         if filepath.exists():
-            logger.info(f"overwriting existing file at `{str(filepath)}`")
+            log.debug(f"overwriting existing file at `{str(filepath)}`")
 
         with open(filepath, mode="w", encoding="utf-8") as file:
             json.dump(serialized, file, indent=2)
 
-        logger.info(
-            f"written DICOM tags for {self.participant=}, {self.study_inst_uid=}"
+        log.debug(
+            f"written segmentation results for participant {self.participant}, study {self.study_inst_uid}"
         )
 
     @classmethod
@@ -247,52 +291,69 @@ class SegmentationResult:
             participant=data.get("participant"),
             study_inst_uid=data.get("study_inst_uid"),
             patient_height=data.get("patient_height"),
-            # id=data.get("id"),
-            metrics_dict={
-                uid: MetricsData._from_dict(metric)
-                for uid, metric in data.get("metrics_dict").items()
+            series_results={
+                uid: SeriesSegmentationResult(
+                    series_inst_uid=uid,
+                    status=ProcessResult(result.get("status")),
+                    contrast_phase=result.get("contrast_phase"),
+                    metrics=Metrics._from_dict(metrics)
+                    if (metrics := result.get("metrics"))
+                    else None,
+                )
+                for uid, result in data.get("series_results", {}).items()
             },
         )
 
     def _to_list_of_dicts(self) -> list[dict[str, Any]]:
-        _base_dict = {
+        study_base = {
             "participant": self.participant,
-            # "id": self.id,
             "patient_height": self.patient_height,
             "study_inst_uid": self.study_inst_uid,
         }
-        return [_base_dict | metric._to_dict() for metric in self.metrics_dict.values()]
+
+        flattened_items = []
+
+        for uid, result in self.series_results.items():
+            results = {
+                "status": result.status.value
+                if isinstance(result.status, ProcessResult)
+                else result.status,
+                "series_inst_uid": result.series_inst_uid,
+                "contrast_phase": result.contrast_phase,
+            }
+            metrics = result.metrics._to_dict() if result.metrics else {}
+
+            combined = study_base | results | metrics
+
+            flattened_items.append(combined)
+
+        return flattened_items
 
 
 @dataclass
 class Report:
     timestamp: str
-    data: list[dict[str, Any]] = field(default_factory=list)
+    data_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def add_case(
         self,
         participant: str,
         study_instance_uid: str,
-        process_result: ProcessResult,
+        process_result: ProcessResult | str,
         series_instance_uid: str | None = None,
     ):
+
+        if isinstance(process_result, ProcessResult):
+            process_result = process_result.value
+
         row: dict[str, Any] = {
             "participant": participant,
             "study_inst_uid": study_instance_uid,
             "series_inst_uid": series_instance_uid,
-            "process_result": process_result.value,
+            "process_result": process_result,
         }
-        self.data.append(row)
-        msg = f"case {participant}, study {study_instance_uid}, series {series_instance_uid}: {process_result.value}"
-        if process_result in (
-            ProcessResult.MISSING_L3_MASK,
-            ProcessResult.MISSING_ON_PACS_OR_LOCAL,
-            ProcessResult.NO_SERIES_TO_SEGMENT,
-        ):
-            logger.warning(msg)
-        else:
-            logger.info(msg)
+        self.data_rows.append(row)
 
     def write_report(self, directory: str | Path):
-        df = pd.DataFrame(self.data)
+        df = pd.DataFrame(self.data_rows)
         df.to_csv(Path(directory, f"./report_{self.timestamp}.csv"), index=False)
