@@ -7,6 +7,7 @@ from pathlib import Path
 from src import preprocessing, segmentation, utils
 from src.classes import ProcessResult, Report, StudyData
 from src.network import database, pacs
+from src.network.database import FILTER_TYPES, QueryFilter
 from src.slogger import setup_logger
 
 
@@ -73,24 +74,16 @@ def main(args: argparse.Namespace):
     setup_logger(debug)
     log = logging.getLogger("sarcoseg")
 
-    participant_list = utils.read_patient_list(
-        args.participant_list, columns=["PARTICIPANT", "STUDY_INSTANCE_UID"]
+    participants_df = utils.read_patient_list(
+        args.participant_list,
+        columns=["PARTICIPANT", "CAS_VYSETRENI", "STUDY_INSTANCE_UID"],
     )
 
     labkey_api = database.LabkeyAPI.init_from_json(debug=debug)
     if not labkey_api.is_labkey_reachable():
         sys.exit(-1)
 
-    if args.exclude_finished_studies:
-        finished_study_uids = labkey_api.exclude_finished_studies(
-            participant_list["STUDY_INSTANCE_UID"].to_list()
-        )
-    else:
-        finished_study_uids: list[str] = participant_list[
-            "STUDY_INSTANCE_UID"
-        ].to_list()
-
-    queried_study_cases: list[StudyData] = labkey_api._select_rows(
+    queried_study_cases = labkey_api._select_rows(
         schema_name="lists",
         query_name="RDG-CT-Sarko-All",
         columns=[
@@ -100,15 +93,32 @@ def main(args: argparse.Namespace):
             "PACS_CISLO",
             "VYSKA_PAC.",
         ],  # TODO: possibly add CAS_VYSETRENI
-        filter_dict={"STUDY_INSTANCE_UID": finished_study_uids},
-        sanitize_rows=True,
+        filter_array=[
+            QueryFilter(
+                "PARTICIPANT",
+                ";".join(participants_df["PARTICIPANT"].to_list()),
+                FILTER_TYPES.EQUALS_ONE_OF,
+            ),
+            QueryFilter(
+                "CAS_VYSETRENI",
+                ";".join(participants_df["CAS_VYSETRENI"].to_list()),
+                FILTER_TYPES.EQUALS_ONE_OF,
+            ),
+        ],
     )
+
+    unfinished_cases = labkey_api.exclude_finished_studies(queried_study_cases)
 
     if not queried_study_cases:
         log.critical(
             "quitting sarcoseg, labkey query responses have no StudyInstanceUIDs"
         )
         sys.exit(-1)
+
+    study_cases = [
+        StudyData._from_labkey_row(case)
+        for case in unfinished_cases.to_dict(orient="records")
+    ]
 
     pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
 
@@ -119,7 +129,7 @@ def main(args: argparse.Namespace):
     report = Report(timestamp)
 
     log.info(f"preprocessing and segmenting {len(queried_study_cases)} cases")
-    for study_case in queried_study_cases:
+    for study_case in study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
         if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
@@ -206,6 +216,17 @@ def main(args: argparse.Namespace):
                 log.warning(
                     f"case {study_case.participant}, study {study_case.study_inst_uid} has no segmentation data to send to labkey"
                 )
+
+            labkey_api.query.insert_rows(
+                "lists",
+                "CTSegmentationState",
+                rows=[
+                    {
+                        "PARTICIPANT": study_case.participant,
+                        "STUDY_INSTANCE_UID": study_case.study_inst_uid,
+                    }
+                ],
+            )
 
         if args.remove_dicom_files:
             utils.remove_dicom_dir(input_study_dir)

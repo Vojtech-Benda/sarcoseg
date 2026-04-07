@@ -1,6 +1,7 @@
 import logging
-from typing import Self
+from typing import Any, Self
 
+import pandas as pd
 import requests
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
@@ -10,6 +11,9 @@ from src.classes import StudyData
 from src.io import read_json
 
 log = logging.getLogger("database")
+
+
+FILTER_TYPES = QueryFilter.Types
 
 
 class LabkeyAPI(APIWrapper):
@@ -64,23 +68,12 @@ class LabkeyAPI(APIWrapper):
         query_name: str,
         columns: list[str] | str | None = None,
         max_rows: int = -1,
-        filter_dict: dict[str, list[str]] | None = None,
+        filter_array: list[QueryFilter] | None = None,
         sanitize_rows: bool = False,
-    ) -> list[StudyData]:
+    ) -> list[dict[str, Any]]:  # list[StudyData]
         log.info(
             f"labkey query, schema: {schema_name}, query: {query_name}, columns: {columns}"
         )
-
-        filter_array = None
-        if filter_dict:
-            filter_array = [
-                QueryFilter(
-                    column,
-                    ";".join(values),
-                    QueryFilter.Types.EQUALS_ONE_OF,
-                )
-                for column, values in filter_dict.items()
-            ]
 
         response = self.query.select_rows(
             schema_name=schema_name,
@@ -91,14 +84,17 @@ class LabkeyAPI(APIWrapper):
         )
 
         rows = response.get("rows", [])
-        log.info(f"returned rows: {len(rows)}")
+        log.info(f"SELECT: returned {len(rows)} rows")
         if len(rows) == 0:
             log.warning(f"no returned rows from {query_name}")
             return []
 
-        if sanitize_rows:
-            return self.sanitize_response_data(rows)
-        return rows
+        # if sanitize_rows:
+        #     return self.sanitize_response_data(rows)
+        cols = [col["header"] for col in response.get("columnModel", [])]
+        return [
+            {key: value for key, value in row.items() if key in cols} for row in rows
+        ]
 
     def sanitize_response_data(self, rows: list[dict]) -> list[StudyData]:
         return [StudyData._from_labkey_row(row) for row in rows]
@@ -120,7 +116,7 @@ class LabkeyAPI(APIWrapper):
 
         log.info(f"updated {response.get('rowsAffected', 'n/a')}")
 
-    def exclude_finished_studies(self, study_uids: list[str]) -> list[str]:
+    def exclude_finished_studies(self, cases: list[dict[str, Any]]) -> pd.DataFrame:
         """Query Labkey `CTSegmentationData` table with list of Study Instance UIDs and exclude those with segmentation results.
         Returns input list if the queried table has no data for matching values, ie no values for "rows" key.
 
@@ -133,23 +129,39 @@ class LabkeyAPI(APIWrapper):
 
         log.info("checking for study uids with segmentation results")
 
+        cols = list(cases[0].keys())
+        cases_df = pd.DataFrame(cases, columns=cols)
+
+        study_uids = cases_df["STUDY_INSTANCE_UID"].to_list()
+
         rows = self._select_rows(
             schema_name="lists",
-            query_name="CTSegmentationData",
-            columns=["STUDY_INST_UID"],
-            filter_dict={"STUDY_INST_UID": study_uids},
-            sanitize_rows=False,
+            query_name="CT-Segmentation-Finished",
+            columns=["STUDY_INSTANCE_UID"],
+            filter_array=[
+                QueryFilter(
+                    "STUDY_INSTANCE_UID",
+                    ";".join(study_uids),
+                    FILTER_TYPES.EQUALS_ONE_OF,
+                )
+            ],
         )
 
         if not rows:
             log.debug("no study uids excluded, returning input")
-            return study_uids
+            return cases_df
 
-        finished_studies = set([row["study_inst_uid"] for row in rows])
+        finished_studies = set([row["STUDY_INSTANCE_UID"] for row in rows])
+
         log.debug(
             f"excluding {len(finished_studies)} study uids due to existing segmentation results"
         )
-        return list(set(study_uids).difference(finished_studies))
+
+        return cases_df[
+            ~cases_df["STUDY_INSTANCE_UID"]
+            .isin(finished_studies)
+            .reset_index(drop=True)
+        ]
 
     @classmethod
     def init_from_json(cls, debug: bool = False) -> Self:
