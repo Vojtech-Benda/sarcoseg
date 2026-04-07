@@ -76,7 +76,7 @@ def main(args: argparse.Namespace):
 
     participants_df = utils.read_patient_list(
         args.participant_list,
-        columns=["PARTICIPANT", "CAS_VYSETRENI", "STUDY_INSTANCE_UID"],
+        columns=["PARTICIPANT", "CAS_VYSETRENI"],
     )
 
     labkey_api = database.LabkeyAPI.init_from_json(debug=debug)
