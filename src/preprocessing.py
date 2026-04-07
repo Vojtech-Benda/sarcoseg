@@ -7,6 +7,7 @@ from statistics import mean
 from typing import Iterable
 
 import pydicom
+from pydicom.multival import MultiValue
 from SimpleITK import ImageSeriesReader, WriteImage
 
 from src.classes import SeriesData, StudyData
@@ -14,33 +15,6 @@ from src.utils import SERIES_DESC_PATTERN
 
 log = logging.getLogger("preprocess")
 
-SERIES_DESC_PATTERN = re.compile(
-    r"|".join(
-        (
-            "protocol",
-            "topogram",
-            "scout",
-            "patient",
-            "dose",
-            "report",
-            "monitor",
-            "text",
-            # "planning",
-            "mip",
-            "line",
-            "distance",
-            "head",
-            "coronal",
-            "cor",
-            "sag",
-            "sagital",
-            "sagittal",
-            "bestdiast",
-            "bestsyst",
-        )
-    ),
-    re.IGNORECASE,
-)
 CONTRAST_PHASES_PATTERN = re.compile(
     r"|".join(
         (
@@ -165,6 +139,7 @@ def filter_dicom_files(
                 "SeriesDescription",
                 "SliceThickness",
                 "Modality",
+                "ConvolutionKernel",
             ],
         )
 
@@ -184,6 +159,15 @@ def filter_dicom_files(
 
         if not hasattr(ds, "SliceThickness"):
             continue
+
+        if convolution_kernel := ds.get("ConvolutionKernel", ""):
+            convolution_kernel = (
+                convolution_kernel[0]
+                if isinstance(convolution_kernel, MultiValue)
+                else convolution_kernel
+            )
+            if "bl57" in convolution_kernel.lower():
+                continue
 
         # filter out remaining files with series matching pattern:
         # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
