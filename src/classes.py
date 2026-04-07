@@ -61,8 +61,8 @@ class StudyData:
         return cls(
             participant=row.get("PARTICIPANT"),
             study_inst_uid=row.get("STUDY_INSTANCE_UID"),
-            patient_id=row.get("RODNE_CISLO"),
-            patient_height=row.get("VYSKA_PAC."),
+            patient_id=row.get("RODNE_CISLO", ""),
+            patient_height=row.get("VYSKA_PAC.", 0.0),
         )
 
     @classmethod
