@@ -257,10 +257,10 @@ def select_series_to_segment(
 
         if event_dose_map and series_data.irradiation_event_uid != "n/a":
             series_data.mean_ctdi_vol = event_dose_map.get(
-                series_data.irradiation_event_uid
+                series_data.irradiation_event_uid, {}
             ).get("mean_ctdi_vol", -1.0)
             series_data.dose_length_product = event_dose_map.get(
-                series_data.irradiation_event_uid
+                series_data.irradiation_event_uid, {}
             ).get("dlp", -1.0)
 
     return {series.series_inst_uid: series for series in selected_series.values()}
