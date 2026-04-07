@@ -173,7 +173,8 @@ class Metrics:
             {
                 "skelet_muscle_index": self.skelet_muscle_index,
                 "total_duration": self.total_duration,
-                "l3_slice_index": self.l3_slice_index,
+                "L3_slice_index": self.l3_slice_index,
+                "L3_tube_current": self.l3_tube_current,
             }
             | {f"area_{label}": self.area.get(label) for label in tissue_labels}
             | {f"mean_hu_{label}": self.mean_hu.get(label) for label in tissue_labels}
