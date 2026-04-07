@@ -10,6 +10,7 @@ import pydicom
 from SimpleITK import ImageSeriesReader, WriteImage
 
 from src.classes import SeriesData, StudyData
+from src.utils import SERIES_DESC_PATTERN
 
 log = logging.getLogger("preprocess")
 

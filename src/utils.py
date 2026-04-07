@@ -1,20 +1,44 @@
 import logging
+import re
 import shutil
 from pathlib import Path
 from time import perf_counter
 
-# import nibabel as nib
-# import numpy as np
 import pandas as pd
-
-# import skimage as sk
 import SimpleITK as sitk
 
 from src.classes import Centroids, ImageData, Metrics
 from src.labels import (
     DEFAULT_TISSUE_CLASSES,
-    # DEFAULT_TISSUE_CLASSES_INV,
     TISSUE_HU_RANGES,
+)
+
+SERIES_DESC_PATTERN = re.compile(
+    r"|".join(
+        (
+            "protocol",
+            "topogram",
+            "scout",
+            "patient",
+            "dose",
+            "report",
+            "monitor",
+            "text",
+            # "planning",
+            "mip",
+            "line",
+            "distance",
+            "head",
+            "coronal",
+            "cor",
+            "sag",
+            "sagital",
+            "sagittal",
+            "bestdiast",
+            "bestsyst",
+        )
+    ),
+    re.IGNORECASE,
 )
 
 log = logging.getLogger("utils")
