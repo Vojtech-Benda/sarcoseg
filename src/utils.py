@@ -55,10 +55,9 @@ def get_vertebrae_body_centroids(mask: sitk.Image, l3_label: int) -> Centroids:
 
     # label of vertebrae body is 1 due to descending sort by size
     label_filt.Execute(relabeled_vert_parts)
-    body_centroid = relabeled_vert_parts.TransformPhysicalPointToIndex(
+    body_centroid: list[int] = relabeled_vert_parts.TransformPhysicalPointToIndex(
         label_filt.GetCentroid(1)
     )
-
     return Centroids(vert_centroid, body_centroid)
 
     # vert_centroid = np.rint(sk.measure.centroid(l3_mask)).astype(np.uint16)
