@@ -154,8 +154,8 @@ def filter_dicom_files(
             dose_report_file = file
             continue
 
-        if "DERIVED" in ds.ImageType:
-            continue
+        # if "DERIVED" in ds.ImageType:
+        #     continue
 
         if not hasattr(ds, "SliceThickness"):
             continue
