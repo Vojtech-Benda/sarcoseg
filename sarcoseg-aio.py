@@ -98,6 +98,11 @@ def main(args: argparse.Namespace):
                 ";".join(participants_df["CAS_VYSETRENI"].to_list()),
                 FILTER_TYPES.EQUALS_ONE_OF,
             ),
+            QueryFilter(
+                "VYSKA_PAC.",
+                "",
+                QueryFilter.Types.IS_NOT_BLANK,
+            ),
         ],
     )
 
