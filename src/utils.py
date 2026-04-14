@@ -36,6 +36,7 @@ SERIES_DESC_PATTERN = re.compile(
             "sagittal",
             "bestdiast",
             "bestsyst",
+            "thick",
         )
     ),
     re.IGNORECASE,
