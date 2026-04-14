@@ -52,11 +52,11 @@ def preprocess_dicom_study(
         f"preprocessing DICOM files for case {study_case.participant}, study {study_case.study_inst_uid}"
     )
 
-    series_files_map, dose_report_path = filter_dicom_files(dicom_files)
+    series_files_map, dose_report_paths = filter_dicom_files(dicom_files)
 
     event_dose_map = None
-    if dose_report_path:
-        event_dose_map = extract_dose_values(dose_report_path)
+    if dose_report_paths and len(dose_report_paths) > 0:
+        event_dose_map = extract_dose_values(dose_report_paths)
 
     study_case.series = select_series_to_segment(
         series_files_map, event_dose_map=event_dose_map
@@ -107,7 +107,7 @@ def write_series_as_nifti(
 
 def filter_dicom_files(
     dicom_files: list[Path],
-) -> tuple[dict[str, list[Path]], Path | None]:
+) -> tuple[dict[str, list[Path]], list[str | Path] | None]:
     """
     Sorts filepaths by DICOM tag SeriesInstanceUID and removes (filters) out files matching these rules:
     * SeriesDescription contains `protocol`, `topogram`, `scout`, `dose`, `report`, `patient`, `monitor`
@@ -128,7 +128,7 @@ def filter_dicom_files(
 
     series_files_map: defaultdict[str, list[Path]] = defaultdict(list[Path])
 
-    dose_report_file = None
+    dose_report_files = []
     for file in dicom_files:
         ds = pydicom.dcmread(
             file,
@@ -151,7 +151,7 @@ def filter_dicom_files(
         # 4. filter out based on regex pattern match on SeriesDescription -> final clean up for any remaining non primary image files
 
         if "dose report" in ds.SeriesDescription.lower():
-            dose_report_file = file
+            dose_report_files.append(file)
             continue
 
         # if "DERIVED" in ds.ImageType:
@@ -180,15 +180,15 @@ def filter_dicom_files(
 
     log.debug(f"found {len(series_files_map.keys())} image series")
 
-    if not dose_report_file:
-        log.warning("dose report DICOM file not found")
+    if len(dose_report_files) == 0:
+        log.warning("no dose report DICOM files found")
 
-    return series_files_map, dose_report_file
+    return series_files_map, dose_report_files
 
 
 def select_series_to_segment(
     series_files_map: dict[str, list[Path]],
-    event_dose_map: dict[str, dict[str, float]] | None,
+    event_dose_map: dict[str, dict[str, float | int]] | None,
 ) -> dict[str, SeriesData]:
     """
     Return one or more CT series with lowest slice thickness and highest file count based on contrast phase type:
@@ -266,7 +266,9 @@ def select_series_to_segment(
     return {series.series_inst_uid: series for series in selected_series.values()}
 
 
-def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]]:
+def extract_dose_values(
+    dose_filepaths: list[str | Path],
+) -> dict[str, dict[str, float]]:
     """
     Maps IrradiationEventUID to a map of dose values:
         - EventUID1
@@ -283,13 +285,15 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
     Returns:
         event_to_dose (dict[str, dict[str, float]]): map of IrradiationEventUID to map of dose values
     """
-    ds = pydicom.dcmread(dose_filepath)
 
-    if ds.Modality != "SR":
-        log.warning(f"file {dose_filepath} is not dose report")
-        return {}
-
-    event_to_dose = {}
+    """
+    event_to_dose = {
+        irradiation_uid1: {"dlp": ..., "mean_ctdi_vol": ...},
+        irradiation_uid2: {...},
+        ...
+    }
+    """
+    event_to_dose: dict[str, dict[str, float | int]] = {}
 
     def walk_sequence(sequence, current_event=None):
         for item in sequence:
@@ -302,8 +306,8 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
                     current_event = item.UID
                     if current_event not in event_to_dose:
                         event_to_dose[current_event] = {
-                            "dlp": None,
-                            "mean_ctdi_vol": None,
+                            "dlp": -1,
+                            "mean_ctdi_vol": -1,
                         }
 
             # find dose values
@@ -321,7 +325,14 @@ def extract_dose_values(dose_filepath: str | Path) -> dict[str, dict[str, float]
             if hasattr(item, "ContentSequence"):
                 walk_sequence(item.ContentSequence, current_event)
 
-    walk_sequence(ds.ContentSequence)
+    for dose_file in dose_filepaths:
+        ds = pydicom.dcmread(dose_file)
+
+        if ds.Modality != "SR":
+            log.warning(f"file {dose_file} is not dose report")
+            continue
+
+        walk_sequence(ds.ContentSequence)
     return event_to_dose
 
 
