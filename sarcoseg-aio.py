@@ -119,6 +119,10 @@ def main(args: argparse.Namespace):
         for case in unfinished_cases.to_dict(orient="records")
     ]
 
+    if len(study_cases) == 0:
+        log.error("0 cases to process, exit...")
+        sys.exit(-1)
+
     pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
