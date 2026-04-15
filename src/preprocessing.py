@@ -145,17 +145,19 @@ def filter_dicom_files(
 
         # FILTER OUT FILES WITH FOLLOWING RULES:
         # 1. "dose report" in SeriesDescription -> keep path to "dose report" file
-        # 2. "DERIVED" or "SECONDARY" in SeriesDescription -> does not affect files without those strings, eg. ["PRIMARY", "ORIGINAL", "AXIAL", ...]
+        # 2. "SECONDARY" in SeriesDescription -> does not affect files without that string, eg. ["DERIVED", "PRIMARY", "ORIGINAL", "AXIAL", ...]
         #   - also removes plane reconstructed images, 3D volume renderings
         # 3. file has SliceThickness -> removes non image type files - reports, protocols, etc.
-        # 4. filter out based on regex pattern match on SeriesDescription -> final clean up for any remaining non primary image files
+        # 4. filter out based on regex pattern match on SeriesDescription -> final clean up for any remaining non-image files
 
-        if "dose report" in ds.SeriesDescription.lower():
+        series_desc = ds.get("SeriesDescription", "").lower()
+        if "dose report" in series_desc:
             dose_report_files.append(file)
             continue
 
-        # if "DERIVED" in ds.ImageType:
-        #     continue
+        image_type = ds.get("ImageType", [])
+        if "SECONDARY" in image_type:
+            continue
 
         if not hasattr(ds, "SliceThickness"):
             continue
@@ -171,7 +173,7 @@ def filter_dicom_files(
 
         # filter out remaining files with series matching pattern:
         # ("protocol", "topogram", "scout", "patient", "dose", "report"), case insensitive
-        if SERIES_DESC_PATTERN.search(ds.SeriesDescription):
+        if SERIES_DESC_PATTERN.search(series_desc):
             continue
 
         series_uid = ds.SeriesInstanceUID

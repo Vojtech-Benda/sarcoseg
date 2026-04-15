@@ -17,7 +17,7 @@ from src.utils import SERIES_DESC_PATTERN
 
 log = logging.getLogger("pacs")
 
-WRONG_IMAGE_TYPES = ["OTHER", "LOCALIZER"]  # "DERIVED", "SECONDARY"
+WRONG_IMAGE_TYPES = ["OTHER", "LOCALIZER", "SECONDARY"]  # "DERIVED", "SECONDARY"
 
 
 class PacsAPI:

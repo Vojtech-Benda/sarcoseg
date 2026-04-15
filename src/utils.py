@@ -37,6 +37,7 @@ SERIES_DESC_PATTERN = re.compile(
             "bestdiast",
             "bestsyst",
             "thick",
+            "result",
         )
     ),
     re.IGNORECASE,
