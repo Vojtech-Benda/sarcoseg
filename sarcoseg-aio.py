@@ -137,6 +137,9 @@ def main(args: argparse.Namespace):
     log.info(f"{len(queried_study_cases) - len(study_cases)} cases already segmented")
     log.info(f"preprocessing and segmenting {len(study_cases)} cases")
 
+    pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
+
+    # --- start study case processing ---
     for study_case in study_cases:
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
