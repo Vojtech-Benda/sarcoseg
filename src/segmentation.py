@@ -65,24 +65,28 @@ def segment_ct_study(
             series_output_dir,
         )
 
+        series_seg_result = SeriesSegmentationResult(
+            series_inst_uid=series_inst_uid, contrast_phase=contrast_phase
+        )
+
         if not slice_extraction_result:
             log.warning(
                 f"participant {study_segmentation.participant}, study {study_segmentation.study_inst_uid}, series {series_inst_uid} has no L3 mask"
             )
-
-            result = SeriesSegmentationResult(
-                series_inst_uid=series_inst_uid,
-                status=ProcessResult.MISSING_L3_MASK,
-                contrast_phase=contrast_phase,
-            )
-            study_segmentation.add_result(result)
+            series_seg_result.status = ProcessResult.MISSING_L3_MASK
+            study_segmentation.add_result(series_seg_result)
             continue
 
         tissue_volume_data, centroids, extraction_duration = slice_extraction_result
 
-        tissue_mask_data, tissue_duration = segment_tissues(
-            tissue_volume_data.path, series_output_dir
-        )
+        tissue_seg_result = segment_tissues(tissue_volume_data.path, series_output_dir)
+
+        if not tissue_seg_result:
+            series_seg_result.status = ProcessResult.SEGMENTATION_TISSUE_FAIL
+            study_segmentation.add_result(series_seg_result)
+            continue
+
+        tissue_mask_data, tissue_duration = tissue_seg_result
 
         processed_data, postproc_duration = utils.postprocess_tissue_masks(
             tissue_mask_data,
@@ -106,13 +110,9 @@ def segment_ct_study(
 
         metrics.set_l3_tube_current(output_dir, series_inst_uid)
 
-        result = SeriesSegmentationResult(
-            series_inst_uid=series_inst_uid,
-            status=ProcessResult.SEGMENTATION_FINISHED,
-            contrast_phase=contrast_phase,
-            metrics=metrics,
-        )
-        study_segmentation.add_result(result)
+        series_seg_result.metrics = metrics
+        series_seg_result.status = ProcessResult.SEGMENTATION_FINISHED
+        study_segmentation.add_result(series_seg_result)
         log.debug(f"segmentation finished for series {series_inst_uid}")
 
         case_images_dir = series_output_dir.joinpath("images")
@@ -189,8 +189,7 @@ def segment_spine(
         "--roi_subset",
     ] + list(vert_classes)
 
-    subprocess.run(args=command)
-
+    res = subprocess.run(args=command, capture_output=True, text=True)
     duration = perf_counter() - start
     log.info(f"spine segmentation finised in {duration:.4f} seconds")
 
@@ -199,7 +198,7 @@ def segment_spine(
 
 def segment_tissues(
     tissue_volume_path: Path | str, case_output_dir: Path | str
-) -> tuple[ImageData, float]:
+) -> tuple[ImageData, float] | None:
     tissue_volume_path = Path(tissue_volume_path)
     case_output_dir = Path(case_output_dir)
 
@@ -207,12 +206,16 @@ def segment_tissues(
 
     output_filepath = Path(case_output_dir, "tissue_mask.nii.gz")
     start = perf_counter()
-    tissue_predictor.predict_from_files(
-        list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
-        output_folder_or_list_of_truncated_output_files=[str(output_filepath)],
-        num_processes_preprocessing=8,
-        num_processes_segmentation_export=8,
-    )
+    try:
+        tissue_predictor.predict_from_files(
+            list_of_lists_or_source_folder=[[str(tissue_volume_path)]],
+            output_folder_or_list_of_truncated_output_files=[str(output_filepath)],
+            num_processes_preprocessing=8,
+            num_processes_segmentation_export=8,
+        )
+    except RuntimeError as err:
+        log.error(f"tissue segmentation failed: {err}")
+        return None
 
     duration = perf_counter() - start
     log.info(f"tissue segmentation finished in {duration:.4f} seconds")
