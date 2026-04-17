@@ -84,7 +84,7 @@ class LabkeyAPI(APIWrapper):
         )
 
         rows = response.get("rows", [])
-        log.info(f"SELECT: returned {len(rows)} rows")
+        log.info(f"SELECT {query_name}: {len(rows)} rows")
         if len(rows) == 0:
             log.warning(f"no returned rows from {query_name}")
             return []
@@ -99,22 +99,13 @@ class LabkeyAPI(APIWrapper):
     def sanitize_response_data(self, rows: list[dict]) -> list[StudyData]:
         return [StudyData._from_labkey_row(row) for row in rows]
 
-    def _upload_data(
-        self, schema_name: str, query_name: str, rows: list, update_rows: bool = False
+    def _insert_rows(
+        self, schema_name: str, query_name: str, rows: list[dict[str, Any]]
     ):
-        log.info(f"sending {len(rows)} rows")
-
-        response = None
-        if update_rows:
-            response = self.query.update_rows(
-                schema_name=schema_name, query_name=query_name, rows=rows
-            )
-        else:
-            response = self.query.insert_rows(
-                schema_name=schema_name, query_name=query_name, rows=rows
-            )
-
-        log.info(f"updated {response.get('rowsAffected', 'n/a')}")
+        response = self.query.insert_rows(
+            schema_name=schema_name, query_name=query_name, rows=rows
+        )
+        log.info(f"INSERT {query_name}: {response.get('rowsAffected', 0)} rows")
 
     def exclude_finished_studies(self, cases: list[dict[str, Any]]) -> pd.DataFrame:
         """Query Labkey `CTSegmentationData` table with list of Study Instance UIDs and exclude those with segmentation results.

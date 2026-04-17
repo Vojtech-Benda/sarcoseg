@@ -206,7 +206,7 @@ def main(args: argparse.Namespace):
         if args.upload_labkey:
             study_case_list = study_case._to_list_of_dicts()
             if study_case_list:
-                labkey_api._upload_data(
+                labkey_api._insert_rows(
                     schema_name="lists",
                     query_name="CTVysetreni",
                     rows=study_case_list,
@@ -218,7 +218,7 @@ def main(args: argparse.Namespace):
 
             segmentation_result_list = segmentation_result._to_list_of_dicts()
             if segmentation_result_list:
-                labkey_api._upload_data(
+                labkey_api._insert_rows(
                     schema_name="lists",
                     query_name="CTSegmentationData",
                     rows=segmentation_result_list,
@@ -228,7 +228,7 @@ def main(args: argparse.Namespace):
                     f"case {study_case.participant}, study {study_case.study_inst_uid} has no segmentation data to send to labkey"
                 )
 
-            labkey_api.query.insert_rows(
+            labkey_api._insert_rows(
                 "lists",
                 "CT-Segmentation-Finished",
                 rows=[
