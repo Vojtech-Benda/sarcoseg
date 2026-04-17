@@ -123,11 +123,13 @@ def main(args: argparse.Namespace):
         log.error("0 cases to process, exit...")
         sys.exit(-1)
 
-    pacs_api = pacs.PacsAPI.init_from_json(debug=debug)
-
+    output_dir = Path(args.output_dir)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = Path(args.output_dir, timestamp)
-    output_dir.mkdir(exist_ok=True)
+
+    if output_dir.stem == "outputs":
+        output_dir = output_dir.joinpath(timestamp)
+
+    output_dir.mkdir(exist_ok=True, parents=True)
 
     report = Report(timestamp)
 
