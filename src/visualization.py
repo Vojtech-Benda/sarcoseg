@@ -81,7 +81,7 @@ def overlay_spine_mask(
     )
 
     z_index = iso_body_centroid[-1]
-    border_margin = 125
+    border_margin = 100
     line_width = 1
     line_color = (255, 255, 0)
 
