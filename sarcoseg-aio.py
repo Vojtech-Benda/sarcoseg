@@ -141,6 +141,8 @@ def main(args: argparse.Namespace):
 
     # --- start study case processing ---
     for study_case in study_cases:
+        log.info("-" * 50)
+
         input_study_dir = Path(args.input_dir, study_case.study_inst_uid)
 
         if not input_study_dir.exists() and list(input_study_dir.rglob("*")) != 0:
