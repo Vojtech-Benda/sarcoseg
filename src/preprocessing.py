@@ -35,11 +35,8 @@ CONTRAST_PHASES_PATTERN = re.compile(
 def preprocess_dicom_study(
     input_dir: str | Path, output_dir: str | Path, study_case: StudyData
 ) -> None:
-    if isinstance(input_dir, str):
-        input_dir = Path(input_dir)
-
-    if isinstance(output_dir, str):
-        output_dir = Path(output_dir)
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
 
     dicom_file_dir = find_dicoms(input_dir)
 
@@ -76,12 +73,12 @@ def preprocess_dicom_study(
     write_series_as_nifti(
         dicom_dir,
         output_dir,
-        study_case.series.keys(),
+        study_case.series,
     )
 
 
 def write_series_as_nifti(
-    dicom_directory, output_study_dir: Path, series_uids: Iterable[str]
+    dicom_directory, output_study_dir: Path, series_uids: dict[str, SeriesData]
 ):
     reader = ImageSeriesReader()
 
@@ -113,7 +110,7 @@ def filter_dicom_files(
     * SeriesDescription contains `protocol`, `topogram`, `scout`, `dose`, `report`, `patient`, `monitor`
         * excluding dose report
     * SliceThickness is None
-    * ImageType contains `DERIVED`
+    * ImageType contains `SECONDARY`
 
     Also tries to find and return fullpath Dose report series.
 

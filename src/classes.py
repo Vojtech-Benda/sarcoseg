@@ -52,7 +52,7 @@ class StudyData:
     participant: str
     study_inst_uid: str
     patient_id: str | None = field(default=None, repr=False, compare=False)
-    # study_date: str | None = field(default=None, repr=False, compare=False)
+    study_date: str | None = field(default=None, repr=False, compare=False)
     patient_height: float | int | None = field(default=None, repr=False, compare=False)
     series: dict[str, SeriesData] = field(default_factory=dict)
 
@@ -124,7 +124,7 @@ class StudyData:
             "participant": self.participant,
             "study_inst_uid": self.study_inst_uid,
             "patient_height": self.patient_height,
-            # "study_date": self.study_date,
+            "study_date": self.study_date,
         }
         return [_study | series._to_dict() for series in self.series.values()]
 
