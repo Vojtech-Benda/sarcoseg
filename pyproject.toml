@@ -23,6 +23,8 @@ dependencies = [
     "pynetdicom>=3.0.4",
     "pytest>=9.0.2",
     "coloredlogs>=15.0.1",
+    "polars>=1.40.0",
+    "xlsxwriter>=3.2.9",
 ]
 
 testpaths = ["tests"]
