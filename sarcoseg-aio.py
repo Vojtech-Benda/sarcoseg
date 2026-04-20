@@ -163,7 +163,9 @@ def main(args: argparse.Namespace):
                 )
                 continue
 
-        output_study_dir = Path(output_dir, study_case.study_inst_uid)
+        output_study_dir = Path(
+            output_dir, f"{study_case.participant}_{study_case.study_inst_uid}"
+        )
 
         log.info(
             f"preprocessing case {study_case.participant}, study {study_case.study_inst_uid}"
