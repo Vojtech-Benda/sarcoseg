@@ -4,7 +4,6 @@ import re
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
-from typing import Iterable
 
 import pydicom
 from pydicom.multival import MultiValue

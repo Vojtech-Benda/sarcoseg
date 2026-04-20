@@ -170,6 +170,7 @@ class Metrics:
     centroids: Centroids = field(default_factory=Centroids)
     l3_slice_index: int = -1
     l3_tube_current: int = -1
+    image_z_size: int = -1
 
     def _to_dict(self) -> dict[str, Any]:
         tissue_labels = DEFAULT_TISSUE_CLASSES.keys()
@@ -179,6 +180,7 @@ class Metrics:
                 "total_duration": self.total_duration,
                 "L3_slice_index": self.l3_slice_index,
                 "L3_tube_current": self.l3_tube_current,
+                "image_z_size": self.image_z_size,
             }
             | {f"area_{label}": self.area.get(label) for label in tissue_labels}
             | {f"mean_hu_{label}": self.mean_hu.get(label) for label in tissue_labels}
