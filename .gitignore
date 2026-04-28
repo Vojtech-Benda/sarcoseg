@@ -12,9 +12,6 @@ download/
 src/fnosarcoseg.egg-info/
 build/
 models/
-tests/input
-tests/output
-tests/download
 labkey_filter.py
 dcmtk/
 tests/
@@ -28,7 +25,7 @@ testing.py
 # pycache
 __pycache__
 
-# other files
+# specific files
 *.nii
 *.nii.gz
 *.json
