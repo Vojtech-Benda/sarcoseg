@@ -3,7 +3,7 @@ import shutil
 import sys
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from pprint import pprint
+from typing import Iterable
 
 from src.slogger import setup_logger
 
@@ -15,15 +15,24 @@ FILETYPES = {
         "tissue_mask_pp",
         "tissue_slices",
     ),
-    "images": ("tissue_slice", "spine_coronal_overlay", "spine_sagittal_overlay"),
-    "dicom-tags": "dicom_tags",
-    "metrics": "metrics",
-    "report": "report",
+    "images": (
+        "tissue_slice",
+        "tissue_overlay",
+        "spine_coronal_overlay",
+        "spine_sagittal_overlay",
+    ),
+    "dicom-tags": ("dicom_tags",),
+    "metrics": ("metrics",),
+    "report": ("report",),
 }
 
-ALL_FILES = [
-    item for v in FILETYPES.values() for item in (v if isinstance(v, tuple) else [v])
-]
+FILE_EXTS = {
+    "nifti": "nii.gz",
+    "images": "png",
+    "dicom-tags": "json",
+    "metrics": "json",
+    "report": "csv",
+}
 
 
 def get_args():
@@ -44,13 +53,36 @@ def get_args():
             for item in (v if isinstance(v, tuple) else [v])
         ],
         help="space separated list of file types to extract",
+        default=[],
     )
-    parser.add_argument("-t", "--types", nargs="*", choices=FILETYPES.keys())
+    parser.add_argument(
+        "-t", "--types", nargs="*", choices=FILETYPES.keys(), default=[]
+    )
     parser.add_argument(
         "-ov", "--overwrite", action="store_true", help="overwrite extracted results"
     )
 
     return parser.parse_args()
+
+
+def copy_files(
+    input_dir: Path, output_dir: Path, file_type: str, specific_files: Iterable
+):
+    src_paths = [
+        p
+        for basename in specific_files
+        for p in input_dir.rglob(basename + "*." + FILE_EXTS[file_type])
+        if p.is_file()
+    ]
+    dst_paths = [output_dir.joinpath(Path(*p.parts[1:])) for p in src_paths]
+
+    # TODO: replace assert with "if len(src_image_paths) == len(dst_image_paths)" block check? return exception/None/something else on failure
+    assert len(src_paths) == len(dst_paths)
+
+    for src, dst in zip(src_paths, dst_paths):
+        dst.parent.mkdir(exist_ok=True, parents=True)
+
+        shutil.copy2(src, dst)
 
 
 def main(args: Namespace):
@@ -82,23 +114,12 @@ def main(args: Namespace):
     extract_dirpath.mkdir(exist_ok=args.overwrite)
     log.info(f"copying results into `{extract_dirpath}`")
 
-    if "images" in filetypes:
-        # TODO: add specific file filter - spine_coronal_overlay.png, ...
-        # TODO: refactor if block into function
-        # TODO: extend this for other file types
+    for file_type in filetypes:
+        specific_files = [file for file in files if file in FILETYPES[file_type]]
+        if not specific_files:
+            specific_files = FILETYPES[file_type]
 
-        src_image_paths = [p for p in results_dirpath.rglob("*.png") if p.is_file()]
-        dst_image_paths = [
-            extract_dirpath.joinpath(Path(*p.parts[1:])) for p in src_image_paths
-        ]
-
-        # TODO: replace assert with "if len(src_image_paths) == len(dst_image_paths)" block check? return exception/None/something else on failure
-        assert len(src_image_paths) == len(dst_image_paths)
-
-        for src, dst in zip(src_image_paths, dst_image_paths):
-            dst.parent.mkdir(exist_ok=args.overwrite, parents=True)
-
-            shutil.copy2(src, dst)
+        copy_files(results_dirpath, extract_dirpath, file_type, specific_files)
 
 
 if __name__ == "__main__":
