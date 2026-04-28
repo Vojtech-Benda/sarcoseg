@@ -8,22 +8,22 @@ from typing import Iterable
 from src.slogger import setup_logger
 
 FILETYPES = {
-    "nifti": (
+    "nifti": [
         "input_ct_volume",
         "spine_mask",
         "tissue_mask",
         "tissue_mask_pp",
         "tissue_slices",
-    ),
-    "images": (
+    ],
+    "images": [
         "tissue_slice",
         "tissue_overlay",
         "spine_coronal_overlay",
         "spine_sagittal_overlay",
-    ),
-    "dicom-tags": ("dicom_tags",),
-    "metrics": ("metrics",),
-    "report": ("report",),
+    ],
+    "dicom-tags": ["dicom_tags"],
+    "metrics": ["metrics"],
+    "report": ["report"],
 }
 
 FILE_EXTS = {
@@ -47,11 +47,7 @@ def get_args():
         "-f",
         "--files",
         nargs="*",
-        choices=[
-            item
-            for v in FILETYPES.values()
-            for item in (v if isinstance(v, tuple) else [v])
-        ],
+        choices=[item for vals in FILETYPES.values() for item in vals],
         help="space separated list of file types to extract",
         default=[],
     )
@@ -120,6 +116,7 @@ def main(args: Namespace):
             specific_files = FILETYPES[file_type]
 
         copy_files(results_dirpath, extract_dirpath, file_type, specific_files)
+        log.info(f"copied file type: {file_type}, files: {','.join(specific_files)}")
 
 
 if __name__ == "__main__":
