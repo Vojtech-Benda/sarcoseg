@@ -257,10 +257,11 @@ def main(args: argparse.Namespace):
         if args.remove_dicom_files:
             utils.remove_dicom_dir(input_study_dir)
 
+    report.write_report(output_dir)
+
+    # cleanup output directory
     if not any(output_dir.iterdir()):
         utils.remove_empty_segmentation_dir(output_dir)
-
-    report.write_report(output_dir)
 
     if args.remove_input_ct_volume:
         utils.remove_input_ct_volume(output_dir)
