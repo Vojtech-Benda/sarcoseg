@@ -128,7 +128,7 @@ def postprocess_tissue_masks(
     processed_mask_path = mask_data.path.parent.joinpath("tissue_mask_pp.nii.gz")
     sitk.WriteImage(mask, processed_mask_path)
 
-    duration = perf_counter() - start
+    duration = round(perf_counter() - start, ndigits=4)
     log.info(f"tissue postprocessing finished in {duration:.4f} second")
     return ImageData(image=mask, path=processed_mask_path), duration
 
@@ -167,11 +167,11 @@ def compute_metrics(
 
     # divide by 100 to convert from mm2 to cm2
     area = {
-        tissue: stats_filt.GetPhysicalSize(label) / 100.0
+        tissue: round(stats_filt.GetPhysicalSize(label) / 100.0, ndigits=4)
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
     mean_hu = {
-        tissue: stats_filt.GetMean(label)
+        tissue: round(stats_filt.GetMean(label), ndigits=4)
         for tissue, label in DEFAULT_TISSUE_CLASSES.items()
     }
 
@@ -179,7 +179,7 @@ def compute_metrics(
     if patient_height:
         # skeletal muscle index (smi) = muscle area / (patient height ^ 2)
         # units: cm2 / m2 = (cm2) / (cm / 100) ^ 2
-        smi = area["muscle"] / ((patient_height / 100.0) ** 2)
+        smi = round(area["muscle"] / ((patient_height / 100.0) ** 2), ndigits=4)
     return Metrics(area=area, mean_hu=mean_hu, skelet_muscle_index=smi)
 
 

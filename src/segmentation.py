@@ -191,7 +191,7 @@ def segment_spine(
     ] + list(vert_classes)
 
     res = subprocess.run(args=command, capture_output=True, text=True)
-    duration = round(perf_counter() - start, ndigits=6)
+    duration = round(perf_counter() - start, ndigits=4)
     log.info(f"spine segmentation finised in {duration:.4f} seconds")
 
     return utils.read_volume(spine_mask_path), duration
@@ -218,7 +218,7 @@ def segment_tissues(
         log.error(f"tissue segmentation failed: {err}")
         return None
 
-    duration = round(perf_counter() - start, ndigits=6)
+    duration = round(perf_counter() - start, ndigits=4)
     log.info(f"tissue segmentation finished in {duration:.4f} seconds")
 
     return utils.read_volume(output_filepath), duration
@@ -279,7 +279,7 @@ def extract_slices(
     # nib.save(tissue_slice, output_filepath)
     sitk.WriteImage(tissue_slice, output_filepath)
 
-    duration = round(perf_counter() - start, ndigits=6)
+    duration = round(perf_counter() - start, ndigits=4)
     log.info(f"slice extraction finished in {duration:.4f} seconds")
 
     return (

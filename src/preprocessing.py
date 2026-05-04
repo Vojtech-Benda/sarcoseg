@@ -382,8 +382,9 @@ def process_tube_currents(series: dict[str, SeriesData], output_dir: Path | str)
 
         series_currents[uid] = instnum_currents
 
-        series_data.mean_tube_current = mean(
-            [current for current in instnum_currents.values() if current]
+        series_data.mean_tube_current = round(
+            mean([current for current in instnum_currents.values() if current]),
+            ndigits=4,
         )
 
     with open(Path(output_dir, "inst_num_currents.json"), "w") as file:
