@@ -116,19 +116,19 @@ def segment_ct_study(
         study_segmentation.add_result(series_seg_result)
         log.debug(f"segmentation finished for series {series_inst_uid}")
 
-        case_images_dir = series_output_dir.joinpath("images")
-        case_images_dir.mkdir(exist_ok=True)
+        # case_images_dir = series_output_dir.joinpath("images")
+        # case_images_dir.mkdir(exist_ok=True)
         visualization.overlay_spine_mask(
             input_volume_data.image,
             spine_mask_data.image,
             centroids,
-            output_dir=case_images_dir,
+            output_dir=series_output_dir,
         )
 
         visualization.overlay_tissue_mask(
             tissue_volume_data.image,
             processed_data.image,
-            output_dir=case_images_dir,
+            output_dir=series_output_dir,
         )
         log.debug("saved mask overlays")
 
@@ -191,7 +191,7 @@ def segment_spine(
     ] + list(vert_classes)
 
     res = subprocess.run(args=command, capture_output=True, text=True)
-    duration = perf_counter() - start
+    duration = round(perf_counter() - start, ndigits=6)
     log.info(f"spine segmentation finised in {duration:.4f} seconds")
 
     return utils.read_volume(spine_mask_path), duration
@@ -218,7 +218,7 @@ def segment_tissues(
         log.error(f"tissue segmentation failed: {err}")
         return None
 
-    duration = perf_counter() - start
+    duration = round(perf_counter() - start, ndigits=6)
     log.info(f"tissue segmentation finished in {duration:.4f} seconds")
 
     return utils.read_volume(output_filepath), duration
@@ -279,7 +279,7 @@ def extract_slices(
     # nib.save(tissue_slice, output_filepath)
     sitk.WriteImage(tissue_slice, output_filepath)
 
-    duration = perf_counter() - start
+    duration = round(perf_counter() - start, ndigits=6)
     log.info(f"slice extraction finished in {duration:.4f} seconds")
 
     return (
