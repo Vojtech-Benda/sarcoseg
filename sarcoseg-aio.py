@@ -58,6 +58,17 @@ def get_args():
         help="remove DICOM files from input directory",
         default=False,
     )
+    parser.add_argument(
+        "--remove-input-ct-volume",
+        action="store_true",
+        help="remove all input_ct_volume.nii.gz files in <output-dir>",
+        default=False,
+    )
+    parser.add_argument(
+        "--remove-nnunet-jsons",
+        action="store_true",
+        help="remove nnunet dataset.json, plans.json, predict_from_raw_data_args.json files from <output-dir>",
+    )
 
     return parser.parse_args()
 
@@ -250,6 +261,12 @@ def main(args: argparse.Namespace):
         utils.remove_empty_segmentation_dir(output_dir)
 
     report.write_report(output_dir)
+
+    if args.remove_input_ct_volume:
+        utils.remove_input_ct_volume(output_dir)
+
+    if args.remove_nnunet_jsons:
+        utils.remove_nnunet_jsons(output_dir)
 
 
 if __name__ == "__main__":

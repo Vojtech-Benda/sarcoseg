@@ -227,3 +227,21 @@ def remove_empty_segmentation_dir(dirpath: str | Path):
 def remove_dicom_dir(dirpath: str | Path):
     log.debug(f"removing input DICOM directory `{dirpath}`")
     shutil.rmtree(dirpath)
+
+
+def remove_input_ct_volume(dirpath: str | Path):
+    dirpath = Path(dirpath)
+    ct_nifti_files = list(dirpath.rglob("*input_ct_volume.nii.gz"))
+    log.info(f"removing {len(ct_nifti_files)} input_ct_volume.nii.gz files")
+    [file.unlink() for file in ct_nifti_files]
+
+
+def remove_nnunet_jsons(dirpath: str | Path):
+    dirpath = Path(dirpath)
+    files_to_delete = ("dataset.json", "plans.json", "predict_from_raw_data_args.json")
+    log.info(f"removing all {files_to_delete} files")
+    [
+        file.unlink()
+        for filename in files_to_delete
+        for file in dirpath.rglob("*" + filename)
+    ]
